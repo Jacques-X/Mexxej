@@ -64,7 +64,7 @@ export async function startCinematicFlyover(
   };
 
   const recordingDone = new Promise<void>((resolve) => {
-    recorder.onstop = resolve;
+    recorder.onstop = () => resolve();
   });
 
   recorder.start(200); // collect chunks every 200 ms

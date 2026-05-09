@@ -201,18 +201,21 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
         stopover: false,
       }));
 
-      const result = await directionsService.route({
-        origin: new google.maps.LatLng(locs[0].latitude, locs[0].longitude),
-        destination: new google.maps.LatLng(
-          locs[locs.length - 1].latitude,
-          locs[locs.length - 1].longitude
-        ),
-        waypoints,
-        travelMode: google.maps.TravelMode.WALKING,
-        optimizeWaypoints: false,
-      });
-
-      if (result.status !== google.maps.DirectionsStatus.OK) return;
+      let result: google.maps.DirectionsResult;
+      try {
+        result = await directionsService.route({
+          origin: new google.maps.LatLng(locs[0].latitude, locs[0].longitude),
+          destination: new google.maps.LatLng(
+            locs[locs.length - 1].latitude,
+            locs[locs.length - 1].longitude
+          ),
+          waypoints,
+          travelMode: google.maps.TravelMode.WALKING,
+          optimizeWaypoints: false,
+        });
+      } catch {
+        return;
+      }
 
       // Flatten all step paths
       const allPoints: google.maps.LatLng[] = [];
@@ -224,7 +227,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
       const polyline = document.createElement(
         "gmp-polyline-3d"
-      ) as GmpPolyline3DElement;
+      ) as unknown as GmpPolyline3DElement;
       polyline.setAttribute("altitude-mode", "relative-to-mesh");
       polyline.setAttribute("stroke-color", "#38bdf8");
       polyline.setAttribute("stroke-width", "8");
