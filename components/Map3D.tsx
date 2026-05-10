@@ -94,17 +94,29 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     const center = initialCenter ?? { lat: 41.9028, lng: 12.4964 }; // default: Rome
 
     const mapEl = document.createElement("gmp-map-3d") as GmpMap3DElement;
-    mapEl.setAttribute(
-      "center",
-      `${center.lat},${center.lng},300`
-    );
-    mapEl.setAttribute("tilt", "65");
+    // Start high and flat — the fly-in below drops into 3D
+    mapEl.setAttribute("center", `${center.lat},${center.lng},0`);
+    mapEl.setAttribute("tilt", "0");
     mapEl.setAttribute("heading", "0");
-    mapEl.setAttribute("range", "2500");
+    mapEl.setAttribute("range", "1200000");
     mapEl.style.cssText = "width:100%;height:100%;display:block;";
 
     containerRef.current.appendChild(mapEl);
     mapElRef.current = mapEl;
+
+    // Cinematic intro: swoop down into the destination
+    await customElements.whenDefined("gmp-map-3d");
+    setTimeout(() => {
+      mapEl.flyCameraTo({
+        endCamera: {
+          center: { lat: center.lat, lng: center.lng, altitude: 200 },
+          tilt: 67.5,
+          heading: 0,
+          range: 1400,
+        },
+        durationMilliseconds: 3500,
+      });
+    }, 400);
   }, [initialCenter]);
 
   // ── Sync markers whenever `locations` changes ─────────────
