@@ -89,15 +89,20 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     if (cesiumReadyRef.current) return;
     cesiumReadyRef.current = true;
 
+    const CESIUM_VERSION = "1.121";
+    const CESIUM_BASE =
+      `https://cesium.com/downloads/cesiumjs/releases/${CESIUM_VERSION}/Build/Cesium/`;
+
+    // Must be set BEFORE Cesium.js loads so workers resolve correctly
+    (window as any).CESIUM_BASE_URL = CESIUM_BASE; // eslint-disable-line @typescript-eslint/no-explicit-any
+
     const link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href =
-      "https://cesium.com/downloads/cesiumjs/releases/1.121/Build/Cesium/Widgets/widgets.css";
+    link.href = `${CESIUM_BASE}Widgets/widgets.css`;
     document.head.appendChild(link);
 
     const script = document.createElement("script");
-    script.src =
-      "https://cesium.com/downloads/cesiumjs/releases/1.121/Build/Cesium/Cesium.js";
+    script.src = `${CESIUM_BASE}Cesium.js`;
     script.async = true;
     script.onload = () => initCesium();
     document.head.appendChild(script);
@@ -142,9 +147,12 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     return null;
   }
 
-  // ── Initialise Cesium viewer ─────────────────────────────
+  // ── Initialise Cesium viewer — mirrors Armatur exactly ──
   const initCesium = useCallback(async () => {
     if (!containerRef.current || viewerRef.current) return;
+
+    // Prevent Ion asset errors when no token is provided
+    Cesium.Ion.defaultAccessToken = "";
 
     const viewer = new Cesium.Viewer(containerRef.current, {
       timeline: false,
@@ -161,20 +169,16 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       imageryProvider: false,
     });
 
-    // Keep globe visible as a loading placeholder (same as Armatur)
-    // It gets hidden only AFTER tiles are successfully added
     viewer.scene.globe.depthTestAgainstTerrain = true;
 
-    // Google Photorealistic 3D Tiles — same as Armatur
+    // Exact same pattern as Armatur's CesiumViewer.jsx
     Cesium.GoogleMaps.defaultApiKey = apiKey;
-    try {
-      const tileset = await Cesium.createGooglePhotorealistic3DTileset();
-      viewer.scene.primitives.add(tileset);
-      viewer.scene.globe.show = false; // hide globe only once tiles are in
-    } catch (err) {
-      console.warn("Google 3D Tiles failed to load:", err);
-      // Globe stays visible as fallback — beats a black screen
-    }
+    Cesium.createGooglePhotorealistic3DTileset()
+      .then((tileset: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        viewer.scene.primitives.add(tileset);
+        viewer.scene.globe.show = false;
+      })
+      .catch((err: unknown) => console.warn("Google 3D Tiles failed to load:", err));
 
     // Resolve the starting coordinate:
     // 1. First location in itinerary  2. Geocoded destination  3. Fallback (Rome)
