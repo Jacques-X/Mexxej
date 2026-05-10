@@ -5,10 +5,13 @@
 :root {
   --glass-bg: rgba(10, 10, 20, 0.72);
   --glass-border: rgba(255, 255, 255, 0.08);
+  --nav-h: 3.5rem; /* 56px — mobile bottom nav content height */
 }
 
 * {
   box-sizing: border-box;
+  /* Remove tap flash on iOS */
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -18,41 +21,77 @@ body {
   overflow: hidden;
 }
 
-/* Glass card base */
+/* ── Viewport ─────────────────────────────────────────────────
+   100dvh excludes Safari's retractable chrome — use instead of h-screen
+   on the root container. Fallback to 100vh for older browsers.         */
+.h-screen-safe {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* ── Glass ────────────────────────────────────────────────── */
 .glass {
   background: var(--glass-bg);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid var(--glass-border);
 }
 
-/* Hide default Google Maps chrome that leaks through the 3D element */
+/* ── Safe-area padding helpers ────────────────────────────── */
+.safe-top { padding-top:    env(safe-area-inset-top,    0px); }
+.safe-bot { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Position element's bottom just above the mobile tab bar */
+.above-nav {
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── Bottom-sheet drag handle ─────────────────────────────── */
+.sheet-handle {
+  width: 2.5rem;
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0.75rem auto 0.25rem;
+  flex-shrink: 0;
+}
+
+/* ── Google Maps element ──────────────────────────────────── */
 gmp-map-3d {
   display: block;
   width: 100%;
   height: 100%;
 }
 
-/* Scrollbar styling for sidebars */
-.scrollbar-thin::-webkit-scrollbar {
-  width: 4px;
-}
-.scrollbar-thin::-webkit-scrollbar-track {
-  background: transparent;
-}
+/* ── Scrollbars ───────────────────────────────────────────── */
+.scrollbar-thin::-webkit-scrollbar       { width: 4px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 9999px;
 }
 
-/* Day badge colours */
-.day-badge {
-  @apply inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold;
+/* ── Momentum scrolling on iOS ────────────────────────────── */
+.scroll-touch {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Category pill colours */
+/* ── Category badge ───────────────────────────────────────── */
+.day-badge {
+  @apply inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold;
+}
+
+/* ── Category colours ─────────────────────────────────────── */
 .cat-hotel       { @apply bg-violet-500/20 text-violet-300 border border-violet-500/30; }
 .cat-restaurant  { @apply bg-amber-500/20  text-amber-300  border border-amber-500/30; }
 .cat-attraction  { @apply bg-sky-500/20    text-sky-300    border border-sky-500/30; }
 .cat-transport   { @apply bg-emerald-500/20 text-emerald-300 border border-emerald-500/30; }
 .cat-other       { @apply bg-zinc-500/20   text-zinc-300   border border-zinc-500/30; }
+
+/* ── Animations ───────────────────────────────────────────── */
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+.animate-fade-in { animation: fadeIn  0.25s ease-out; }
+.animate-slide-up { animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1); }

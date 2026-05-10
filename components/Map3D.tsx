@@ -114,7 +114,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     if (mapsReadyRef.current) return;
     mapsReadyRef.current = true;
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
     script.async = true;
     document.head.appendChild(script);
   }, [apiKey]);
