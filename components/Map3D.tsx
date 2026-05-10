@@ -73,7 +73,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     scriptLoadedRef.current = true;
 
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=alpha&libraries=maps3d,marker`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=beta&libraries=maps3d,marker`;
     script.async = true;
     script.defer = true;
     script.onload = initMap;
