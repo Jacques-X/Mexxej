@@ -173,12 +173,18 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
     // Exact same pattern as Armatur's CesiumViewer.jsx
     Cesium.GoogleMaps.defaultApiKey = apiKey;
+    console.log("[Map3D] API key set:", apiKey?.slice(0, 8) + "…");
+    console.log("[Map3D] Cesium.GoogleMaps.defaultApiKey:", Cesium.GoogleMaps.defaultApiKey?.slice(0, 8) + "…");
     Cesium.createGooglePhotorealistic3DTileset()
       .then((tileset: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        console.log("[Map3D] 3D Tiles loaded ✓");
         viewer.scene.primitives.add(tileset);
         viewer.scene.globe.show = false;
       })
-      .catch((err: unknown) => console.warn("Google 3D Tiles failed to load:", err));
+      .catch((err: unknown) => {
+        console.error("[Map3D] 3D Tiles error — full details:", err);
+        console.error("[Map3D] Tile URL attempted: https://tile.googleapis.com/v1/3dtiles/root.json?key=" + apiKey?.slice(0, 8) + "…");
+      });
 
     // Resolve the starting coordinate:
     // 1. First location in itinerary  2. Geocoded destination  3. Fallback (Rome)
