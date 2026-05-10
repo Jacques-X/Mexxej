@@ -8,6 +8,7 @@ export type LocationCategory =
 export interface Trip {
   id: string;
   name: string;
+  destination?: string;
   secret_token: string;
   created_at: string;
 }

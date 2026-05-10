@@ -170,6 +170,7 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         locations={locations}
         onMarkerClick={handleMarkerClick}
         initialCenter={mapCenter}
+        destination={trip.destination}
       />
 
       {/* ── Top bar ───────────────────────────────────────── */}

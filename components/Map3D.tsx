@@ -32,6 +32,7 @@ interface Props {
   locations: TripLocation[];
   onMarkerClick: (location: TripLocation) => void;
   initialCenter?: { lat: number; lng: number };
+  destination?: string;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -73,7 +74,7 @@ function cesiumCamera(pos: CameraPosition) {
 
 // ─── Component ───────────────────────────────────────────────
 const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
-  { apiKey, locations, onMarkerClick, initialCenter },
+  { apiKey, locations, onMarkerClick, initialCenter, destination },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -113,6 +114,34 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     document.head.appendChild(script);
   }, [apiKey]);
 
+  // ── Wait for Google Maps SDK to be available ─────────────
+  function waitForGoogleMaps(): Promise<void> {
+    return new Promise((resolve) => {
+      if (typeof google !== "undefined") return resolve();
+      const id = setInterval(() => {
+        if (typeof google !== "undefined") { clearInterval(id); resolve(); }
+      }, 100);
+    });
+  }
+
+  // ── Geocode a place name → { lat, lng } ──────────────────
+  async function geocode(
+    address: string
+  ): Promise<{ lat: number; lng: number } | null> {
+    try {
+      await waitForGoogleMaps();
+      const geocoder = new google.maps.Geocoder();
+      const result = await geocoder.geocode({ address });
+      if (result.results[0]) {
+        const loc = result.results[0].geometry.location;
+        return { lat: loc.lat(), lng: loc.lng() };
+      }
+    } catch {
+      // fall through
+    }
+    return null;
+  }
+
   // ── Initialise Cesium viewer ─────────────────────────────
   const initCesium = useCallback(async () => {
     if (!containerRef.current || viewerRef.current) return;
@@ -132,37 +161,45 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       imageryProvider: false,
     });
 
-    viewer.scene.globe.depthTestAgainstTerrain = true;
+    // Hide everything that causes the blue screen before tiles load
+    viewer.scene.globe.show = false;
+    viewer.scene.skyBox.show = false;
+    viewer.scene.skyAtmosphere.show = false;
+    viewer.scene.sun.show = false;
+    viewer.scene.moon.show = false;
+    viewer.scene.backgroundColor = Cesium.Color.BLACK;
 
     // Google Photorealistic 3D Tiles — same as Armatur
     Cesium.GoogleMaps.defaultApiKey = apiKey;
     try {
       const tileset = await Cesium.createGooglePhotorealistic3DTileset();
       viewer.scene.primitives.add(tileset);
-      viewer.scene.globe.show = false; // hide flat globe once tiles load
     } catch (err) {
       console.warn("Google 3D Tiles failed to load:", err);
     }
 
-    const center = initialCenter ?? { lat: 41.9028, lng: 12.4964 };
+    // Resolve the starting coordinate:
+    // 1. First location in itinerary  2. Geocoded destination  3. Fallback (Rome)
+    let center = initialCenter;
+    if (!center && destination) {
+      center = (await geocode(destination)) ?? undefined;
+    }
+    center ??= { lat: 41.9028, lng: 12.4964 };
 
-    // Start from space then swoop in
+    // Position camera close enough that tiles load immediately (no blue void)
     viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(center.lng, center.lat, 1_200_000),
-      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+      destination: Cesium.Cartesian3.fromDegrees(center.lng, center.lat, 8_000),
+      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-45), roll: 0 },
     });
 
+    // Cinematic swoop into street level
     setTimeout(() => {
       viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(center.lng, center.lat, 600),
-        orientation: {
-          heading: 0,
-          pitch: Cesium.Math.toRadians(-25), // ≈ 65° tilt
-          roll: 0,
-        },
+        destination: Cesium.Cartesian3.fromDegrees(center!.lng, center!.lat, 600),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-25), roll: 0 },
         duration: 3.5,
       });
-    }, 400);
+    }, 600);
 
     // Click handler
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -170,8 +207,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       const picked = viewer.scene.pick(event.position);
       if (Cesium.defined(picked?.id?.id)) {
         const locId: string = picked.id.id;
-        // Bubble up to React state via a custom event so the handler
-        // always sees the latest locations array (avoids stale closure)
         containerRef.current?.dispatchEvent(
           new CustomEvent("cesium-marker-click", { detail: locId, bubbles: true })
         );
@@ -179,7 +214,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     viewerRef.current = viewer;
-  }, [apiKey, initialCenter]);
+  }, [apiKey, initialCenter, destination]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Listen for marker clicks (avoids stale closure) ──────
   useEffect(() => {

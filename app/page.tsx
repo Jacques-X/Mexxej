@@ -14,10 +14,11 @@ async function getTrips(): Promise<Trip[]> {
 async function createTrip(formData: FormData) {
   "use server";
   const name = (formData.get("name") as string)?.trim();
+  const destination = (formData.get("destination") as string)?.trim() || null;
   if (!name) return;
   const { data, error } = await supabase
     .from("trips")
-    .insert({ name })
+    .insert({ name, destination })
     .select()
     .single();
   if (error) {
@@ -95,21 +96,28 @@ export default async function HomePage() {
             <Plus className="w-4 h-4 text-sky-400" />
             New Trip
           </h2>
-          <form action={createTrip} className="flex gap-2">
+          <form action={createTrip} className="space-y-2">
             <input
               name="name"
-              placeholder="Summer in Rome…"
+              placeholder="Trip name — e.g. Summer 2025"
               required
               autoComplete="off"
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm
+                         placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-sky-500/50"
+            />
+            <input
+              name="destination"
+              placeholder="Destination — e.g. Rome, Italy"
+              autoComplete="off"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm
                          placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-sky-500/50"
             />
             <button
               type="submit"
-              className="shrink-0 bg-sky-500 hover:bg-sky-400 active:bg-sky-600 transition-colors
-                         text-white font-semibold rounded-lg px-4 py-2.5 text-sm"
+              className="w-full bg-sky-500 hover:bg-sky-400 active:bg-sky-600 transition-colors
+                         text-white font-semibold rounded-lg py-2.5 text-sm"
             >
-              Create →
+              Create Trip →
             </button>
           </form>
         </div>
