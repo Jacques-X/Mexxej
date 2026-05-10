@@ -1,5 +1,9 @@
 "use client";
 
+// Map3D — CesiumJS + Google Photorealistic 3D Tiles
+// Same approach as Armatur: Cesium.createGooglePhotorealistic3DTileset()
+// gives real satellite textures; gmp-map-3d (alpha) did not.
+
 import {
   useEffect,
   useRef,
@@ -9,6 +13,9 @@ import {
 } from "react";
 import type { TripLocation, CameraPosition } from "@/types/trip";
 
+// Cesium is loaded from CDN at runtime — declare as any
+declare const Cesium: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+
 // ─── Public API exposed via ref ───────────────────────────────
 export interface Map3DHandle {
   flyCameraTo: (position: CameraPosition, durationMs?: number) => void;
@@ -17,7 +24,7 @@ export interface Map3DHandle {
   waitForAnimationEnd: () => Promise<void>;
   drawRoute: (locations: TripLocation[]) => Promise<void>;
   clearRoute: () => void;
-  getMapElement: () => GmpMap3DElement | null;
+  getMapElement: () => null;
 }
 
 interface Props {
@@ -27,7 +34,6 @@ interface Props {
   initialCenter?: { lat: number; lng: number };
 }
 
-// Colour palette per category
 const CATEGORY_COLORS: Record<string, string> = {
   hotel: "#a78bfa",
   restaurant: "#fbbf24",
@@ -36,7 +42,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: "#94a3b8",
 };
 
-// Build a tiny SVG pin as a data-URI for gmp-marker-3d
 function makePinSvg(color: string, letter: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="48" viewBox="0 0 36 48">
     <filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".4"/></filter>
@@ -49,11 +54,21 @@ function makePinSvg(color: string, letter: string): string {
   return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 
-// Encode a decoded polyline path for the 3D polyline element
-function buildCoordinates(
-  path: google.maps.LatLng[]
-): Array<{ lat: number; lng: number; altitude: number }> {
-  return path.map((p) => ({ lat: p.lat(), lng: p.lng(), altitude: 15 }));
+// Convert gmp-map-3d CameraPosition to Cesium flyTo params
+function cesiumCamera(pos: CameraPosition) {
+  const altOffset = pos.range * Math.cos((pos.tilt * Math.PI) / 180);
+  return {
+    destination: Cesium.Cartesian3.fromDegrees(
+      pos.center.lng,
+      pos.center.lat,
+      (pos.center.altitude ?? 0) + altOffset
+    ),
+    orientation: {
+      heading: Cesium.Math.toRadians(pos.heading),
+      pitch: Cesium.Math.toRadians(pos.tilt - 90), // gmp tilt 0=top-down; Cesium pitch -90=top-down
+      roll: 0,
+    },
+  };
 }
 
 // ─── Component ───────────────────────────────────────────────
@@ -62,150 +77,220 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapElRef = useRef<GmpMap3DElement | null>(null);
-  const markersRef = useRef<Map<string, GmpMarker3DElement>>(new Map());
-  const polylineRef = useRef<GmpPolyline3DElement | null>(null);
-  const scriptLoadedRef = useRef(false);
+  const viewerRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const entityMapRef = useRef<Map<string, string>>(new Map()); // locationId → cesium entity id
+  const routeEntityIdRef = useRef<string | null>(null);
+  const cesiumReadyRef = useRef(false);
+  const mapsReadyRef = useRef(false);
 
-  // ── Bootstrap Google Maps 3D ────────────────────────────────
+  // ── Load Cesium from CDN ─────────────────────────────────
   useEffect(() => {
-    if (scriptLoadedRef.current) return;
-    scriptLoadedRef.current = true;
+    if (cesiumReadyRef.current) return;
+    cesiumReadyRef.current = true;
+
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href =
+      "https://cesium.com/downloads/cesiumjs/releases/1.121/Build/Cesium/Widgets/widgets.css";
+    document.head.appendChild(link);
 
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=beta&libraries=maps3d,marker`;
+    script.src =
+      "https://cesium.com/downloads/cesiumjs/releases/1.121/Build/Cesium/Cesium.js";
     script.async = true;
-    script.defer = true;
-    script.onload = initMap;
+    script.onload = () => initCesium();
     document.head.appendChild(script);
-
-    return () => {
-      // cleanup handled by React's strict-mode guard above
-    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Load Google Maps (DirectionsService + StreetView only) ──
+  useEffect(() => {
+    if (mapsReadyRef.current) return;
+    mapsReadyRef.current = true;
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+    script.async = true;
+    document.head.appendChild(script);
   }, [apiKey]);
 
-  // ── Initialise the <gmp-map-3d> element ─────────────────────
-  const initMap = useCallback(async () => {
-    if (!containerRef.current) return;
+  // ── Initialise Cesium viewer ─────────────────────────────
+  const initCesium = useCallback(async () => {
+    if (!containerRef.current || viewerRef.current) return;
 
-    await customElements.whenDefined("gmp-map-3d");
+    const viewer = new Cesium.Viewer(containerRef.current, {
+      timeline: false,
+      animation: false,
+      baseLayerPicker: false,
+      geocoder: false,
+      homeButton: false,
+      sceneModePicker: false,
+      navigationHelpButton: false,
+      fullscreenButton: false,
+      infoBox: false,
+      selectionIndicator: false,
+      requestRenderMode: false,
+      imageryProvider: false,
+    });
 
-    const center = initialCenter ?? { lat: 41.9028, lng: 12.4964 }; // default: Rome
+    viewer.scene.globe.depthTestAgainstTerrain = true;
 
-    const mapEl = document.createElement("gmp-map-3d") as GmpMap3DElement;
-    // Start high and flat — the fly-in below drops into 3D
-    mapEl.setAttribute("center", `${center.lat},${center.lng},0`);
-    mapEl.setAttribute("tilt", "0");
-    mapEl.setAttribute("heading", "0");
-    mapEl.setAttribute("range", "1200000");
-    mapEl.style.cssText = "width:100%;height:100%;display:block;";
+    // Google Photorealistic 3D Tiles — same as Armatur
+    Cesium.GoogleMaps.defaultApiKey = apiKey;
+    try {
+      const tileset = await Cesium.createGooglePhotorealistic3DTileset();
+      viewer.scene.primitives.add(tileset);
+      viewer.scene.globe.show = false; // hide flat globe once tiles load
+    } catch (err) {
+      console.warn("Google 3D Tiles failed to load:", err);
+    }
 
-    containerRef.current.appendChild(mapEl);
-    mapElRef.current = mapEl;
+    const center = initialCenter ?? { lat: 41.9028, lng: 12.4964 };
 
-    // Cinematic intro: swoop down into the destination
-    await customElements.whenDefined("gmp-map-3d");
+    // Start from space then swoop in
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(center.lng, center.lat, 1_200_000),
+      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+    });
+
     setTimeout(() => {
-      mapEl.flyCameraTo({
-        endCamera: {
-          center: { lat: center.lat, lng: center.lng, altitude: 200 },
-          tilt: 67.5,
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(center.lng, center.lat, 600),
+        orientation: {
           heading: 0,
-          range: 1400,
+          pitch: Cesium.Math.toRadians(-25), // ≈ 65° tilt
+          roll: 0,
         },
-        durationMilliseconds: 3500,
+        duration: 3.5,
       });
     }, 400);
-  }, [initialCenter]);
 
-  // ── Sync markers whenever `locations` changes ─────────────
+    // Click handler
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction((event: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      const picked = viewer.scene.pick(event.position);
+      if (Cesium.defined(picked?.id?.id)) {
+        const locId: string = picked.id.id;
+        // Bubble up to React state via a custom event so the handler
+        // always sees the latest locations array (avoids stale closure)
+        containerRef.current?.dispatchEvent(
+          new CustomEvent("cesium-marker-click", { detail: locId, bubbles: true })
+        );
+      }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    viewerRef.current = viewer;
+  }, [apiKey, initialCenter]);
+
+  // ── Listen for marker clicks (avoids stale closure) ──────
   useEffect(() => {
-    const mapEl = mapElRef.current;
-    if (!mapEl) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: Event) => {
+      const locId = (e as CustomEvent).detail as string;
+      const loc = locations.find((l) => l.id === locId);
+      if (loc) onMarkerClick(loc);
+    };
+    el.addEventListener("cesium-marker-click", handler);
+    return () => el.removeEventListener("cesium-marker-click", handler);
+  }, [locations, onMarkerClick]);
 
-    const existing = markersRef.current;
+  // ── Sync markers whenever locations change ────────────────
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
     const incoming = new Set(locations.map((l) => l.id));
 
-    // Remove stale markers
-    existing.forEach((el, id) => {
-      if (!incoming.has(id)) {
-        el.remove();
-        existing.delete(id);
+    // Remove stale entities
+    entityMapRef.current.forEach((cesiumId, locId) => {
+      if (!incoming.has(locId)) {
+        viewer.entities.removeById(cesiumId);
+        entityMapRef.current.delete(locId);
       }
     });
 
-    // Add / update markers
+    // Add new entities
     locations.forEach((loc) => {
+      if (entityMapRef.current.has(loc.id)) return;
       const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
       const letter = loc.name.charAt(0).toUpperCase();
 
-      if (existing.has(loc.id)) return; // already present
+      const entity = viewer.entities.add({
+        id: loc.id,
+        position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
+        billboard: {
+          image: makePinSvg(color, letter),
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          width: 36,
+          height: 48,
+        },
+        label: {
+          text: loc.name,
+          font: "bold 12px sans-serif",
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -52),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        },
+      });
 
-      const marker = document.createElement(
-        "gmp-marker-3d"
-      ) as GmpMarker3DElement;
-      marker.setAttribute(
-        "position",
-        `${loc.latitude},${loc.longitude},0`
-      );
-      marker.setAttribute("altitude-mode", "relative-to-mesh");
-      marker.setAttribute("draws-when-occluded", "true");
-      marker.title = loc.name;
-
-      // Custom pin icon via slot
-      const img = document.createElement("img");
-      img.src = makePinSvg(color, letter);
-      img.slot = "icon";
-      img.width = 36;
-      img.height = 48;
-      marker.appendChild(img);
-
-      marker.addEventListener("click", () => onMarkerClick(loc));
-
-      mapEl.appendChild(marker);
-      existing.set(loc.id, marker);
+      entityMapRef.current.set(loc.id, entity.id as string);
     });
-  }, [locations, onMarkerClick]);
+  }, [locations]);
 
-  // ── Imperative handle ─────────────────────────────────────
+  // ── Imperative handle ────────────────────────────────────
   useImperativeHandle(ref, () => ({
     flyCameraTo(position, durationMs = 3000) {
-      mapElRef.current?.flyCameraTo({
-        endCamera: position,
-        durationMilliseconds: durationMs,
-      });
+      const viewer = viewerRef.current;
+      if (!viewer) return;
+      viewer.camera.flyTo({ ...cesiumCamera(position), duration: durationMs / 1000 });
     },
 
     flyCameraAround(position, durationMs = 10000, rounds = 1) {
-      mapElRef.current?.flyCameraAround({
-        camera: position,
-        durationMilliseconds: durationMs,
-        rounds,
+      const viewer = viewerRef.current;
+      if (!viewer) return;
+      const cam = cesiumCamera(position);
+      viewer.camera.flyTo({
+        ...cam,
+        orientation: {
+          ...cam.orientation,
+          heading: Cesium.Math.toRadians(position.heading + 360 * rounds),
+        },
+        duration: durationMs / 1000,
       });
     },
 
     stopCamera() {
-      mapElRef.current?.stopCameraAnimation();
+      viewerRef.current?.camera.cancelFlight();
     },
 
     waitForAnimationEnd() {
       return new Promise<void>((resolve) => {
-        if (!mapElRef.current) return resolve();
-        const handler = () => {
-          mapElRef.current?.removeEventListener("gmp-animationend", handler);
+        const viewer = viewerRef.current;
+        if (!viewer) return resolve();
+        const remove = viewer.camera.moveEnd.addEventListener(() => {
+          remove();
           resolve();
-        };
-        mapElRef.current.addEventListener("gmp-animationend", handler);
+        });
       });
     },
 
-    async drawRoute(locs: TripLocation[]) {
-      const mapEl = mapElRef.current;
-      if (!mapEl || locs.length < 2) return;
+    async drawRoute(locs) {
+      const viewer = viewerRef.current;
+      if (!viewer || locs.length < 2) return;
+      if (typeof google === "undefined") return;
 
-      // Clear old polyline
-      polylineRef.current?.remove();
+      // Clear existing route
+      if (routeEntityIdRef.current) {
+        viewer.entities.removeById(routeEntityIdRef.current);
+        routeEntityIdRef.current = null;
+      }
 
       const directionsService = new google.maps.DirectionsService();
       const waypoints = locs.slice(1, -1).map((l) => ({
@@ -229,37 +314,53 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
         return;
       }
 
-      // Flatten all step paths
-      const allPoints: google.maps.LatLng[] = [];
+      const positions: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
       result.routes[0].legs.forEach((leg) =>
         leg.steps.forEach((step) =>
-          step.path?.forEach((p) => allPoints.push(p))
+          step.path?.forEach((p) =>
+            positions.push(Cesium.Cartesian3.fromDegrees(p.lng(), p.lat(), 15))
+          )
         )
       );
 
-      const polyline = document.createElement(
-        "gmp-polyline-3d"
-      ) as unknown as GmpPolyline3DElement;
-      polyline.setAttribute("altitude-mode", "relative-to-mesh");
-      polyline.setAttribute("stroke-color", "#38bdf8");
-      polyline.setAttribute("stroke-width", "8");
-      polyline.setAttribute("stroke-opacity", "0.85");
-      polyline.setAttribute("draws-when-occluded", "true");
-      polyline.coordinates = buildCoordinates(allPoints);
-
-      mapEl.appendChild(polyline);
-      polylineRef.current = polyline;
+      const entity = viewer.entities.add({
+        polyline: {
+          positions,
+          width: 6,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            glowPower: 0.3,
+            color: Cesium.Color.fromCssColorString("#38bdf8"),
+          }),
+          clampToGround: false,
+          depthFailMaterial: new Cesium.ColorMaterialProperty(
+            Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.4)
+          ),
+        },
+      });
+      routeEntityIdRef.current = entity.id as string;
     },
 
     clearRoute() {
-      polylineRef.current?.remove();
-      polylineRef.current = null;
+      const viewer = viewerRef.current;
+      if (!viewer || !routeEntityIdRef.current) return;
+      viewer.entities.removeById(routeEntityIdRef.current);
+      routeEntityIdRef.current = null;
     },
 
     getMapElement() {
-      return mapElRef.current;
+      return null;
     },
   }));
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+        viewerRef.current.destroy();
+        viewerRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div
