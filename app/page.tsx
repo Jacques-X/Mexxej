@@ -89,7 +89,7 @@ export default async function HomePage() {
       }}>
 
         {/* Hero card */}
-        <div className="mxj-glass" style={{
+        <div id="create" className="mxj-glass" style={{
           borderRadius: 24, padding: "36px 40px",
           display: "flex", alignItems: "flex-end", gap: 32,
           flexWrap: "wrap",
@@ -181,38 +181,29 @@ export default async function HomePage() {
                 <TripCard key={trip.id} trip={trip} deleteAction={removeTripAction} />
               ))}
 
-              {/* New trip tile */}
-              <form action={createTrip}>
-                <input type="hidden" name="name" value="" />
-                <button
-                  type="button"
-                  className="mxj-glass"
-                  onClick={() => {
-                    const form = document.querySelector("#quick-create") as HTMLDialogElement;
-                    form?.showModal?.();
-                  }}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    minHeight: 160,
-                    border: "1px dashed var(--mxj-stroke-strong)",
-                    background: "transparent",
-                    borderRadius: 18,
-                    padding: 20,
-                    color: "var(--mxj-muted)",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10,
-                    alignItems: "flex-start",
-                  }}
-                >
+              {/* New trip tile — scrolls back to the create form at top */}
+              <a
+                href="#create"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  alignItems: "flex-start",
+                  minHeight: 160,
+                  border: "1px dashed var(--mxj-stroke-strong)",
+                  background: "transparent",
+                  borderRadius: 18,
+                  padding: 20,
+                  color: "var(--mxj-muted)",
+                  cursor: "pointer",
+                  textDecoration: "none",
+                }}
+              >
                   <span className="mxj-serif" style={{ fontSize: 22, color: "var(--mxj-ink)" }}>+ New trip</span>
-                  <span style={{ fontSize: 13, fontFamily: "var(--mxj-sans)" }}>
+                  <span style={{ fontSize: 13, fontFamily: "var(--mxj-sans)", color: "var(--mxj-muted)" }}>
                     Or paste a Mexxej link from a friend.
                   </span>
-                </button>
-              </form>
+              </a>
             </div>
           </>
         )}
