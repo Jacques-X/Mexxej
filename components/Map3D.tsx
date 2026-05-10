@@ -161,21 +161,19 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       imageryProvider: false,
     });
 
-    // Hide everything that causes the blue screen before tiles load
-    viewer.scene.globe.show = false;
-    viewer.scene.skyBox.show = false;
-    viewer.scene.skyAtmosphere.show = false;
-    viewer.scene.sun.show = false;
-    viewer.scene.moon.show = false;
-    viewer.scene.backgroundColor = Cesium.Color.BLACK;
+    // Keep globe visible as a loading placeholder (same as Armatur)
+    // It gets hidden only AFTER tiles are successfully added
+    viewer.scene.globe.depthTestAgainstTerrain = true;
 
     // Google Photorealistic 3D Tiles — same as Armatur
     Cesium.GoogleMaps.defaultApiKey = apiKey;
     try {
       const tileset = await Cesium.createGooglePhotorealistic3DTileset();
       viewer.scene.primitives.add(tileset);
+      viewer.scene.globe.show = false; // hide globe only once tiles are in
     } catch (err) {
       console.warn("Google 3D Tiles failed to load:", err);
+      // Globe stays visible as fallback — beats a black screen
     }
 
     // Resolve the starting coordinate:
