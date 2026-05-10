@@ -36,11 +36,11 @@ interface Props {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  hotel: "#a78bfa",
-  restaurant: "#fbbf24",
-  attraction: "#38bdf8",
-  transport: "#34d399",
-  other: "#94a3b8",
+  hotel:      "#d8a478",
+  restaurant: "#e88c64",
+  attraction: "#c8b894",
+  transport:  "#88a8c0",
+  other:      "#9aa4b0",
 };
 
 function makePinSvg(color: string, letter: string): string {

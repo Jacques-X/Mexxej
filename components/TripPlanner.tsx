@@ -7,11 +7,8 @@ import Map3D, { type Map3DHandle } from "./Map3D";
 import InfoCard from "./InfoCard";
 import StreetViewPortal from "./StreetViewPortal";
 import TravelConcierge from "./TravelConcierge";
+import Logo from "./Logo";
 import { startCinematicFlyover } from "@/lib/cinematicFlyover";
-import {
-  MapPin, Bot, Film, Route, Share2, Plus, Trash2, X,
-  ChevronLeft, ChevronRight, LayoutList,
-} from "lucide-react";
 
 interface Props {
   trip: Trip;
@@ -19,9 +16,32 @@ interface Props {
   mapsApiKey: string;
 }
 
+const DAY_PALETTES = ["#e88c64", "#d8a478", "#88a8c0", "#c8b894", "#9aa4b0"];
+
+const CATEGORY_META: Record<LocationCategory, { label: string; glyph: string; color: string }> = {
+  hotel:       { label: "Hotel",       glyph: "◑", color: "#d8a478" },
+  restaurant:  { label: "Restaurant",  glyph: "◆", color: "#e88c64" },
+  attraction:  { label: "Attraction",  glyph: "★", color: "#c8b894" },
+  transport:   { label: "Transport",   glyph: "→", color: "#88a8c0" },
+  other:       { label: "Other",       glyph: "·", color: "#9aa4b0" },
+};
+
 const CATEGORY_OPTIONS: LocationCategory[] = [
   "hotel", "restaurant", "attraction", "transport", "other",
 ];
+
+// Inline SVG icons matching the design system
+const Ico = {
+  back:    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3l-5 5 5 5"/></svg>,
+  share:   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v8M5 5l3-3 3 3M3 10v3a1 1 0 001 1h8a1 1 0 001-1v-3"/></svg>,
+  plus:    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M8 3v10M3 8h10"/></svg>,
+  route:   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="3" cy="3" r="1.5"/><circle cx="13" cy="13" r="1.5"/><path d="M3 5v3a3 3 0 003 3h4a3 3 0 003-3"/></svg>,
+  sparkle: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M8 1.5L9 6l4.5 1L9 8l-1 4.5L7 8 2.5 7 7 6z"/></svg>,
+  film:    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10M10 3v10M2 8h12"/></svg>,
+  trash:   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 4h10M6 4V2.5h4V4M5 4l.5 9h5L11 4M7 7v3M9 7v3"/></svg>,
+  close:   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>,
+  pin:     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 14s5-4.5 5-9a5 5 0 10-10 0c0 4.5 5 9 5 9z"/><circle cx="8" cy="5.5" r="1.6"/></svg>,
+};
 
 export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Props) {
   const mapRef = useRef<Map3DHandle>(null);
@@ -34,13 +54,13 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   const [showItinerary, setShowItinerary] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [routeVisible, setRouteVisible] = useState(false);
+  const [dayFilter, setDayFilter] = useState<number | "all">("all");
   const [addForm, setAddForm] = useState({
     name: "", latitude: "", longitude: "",
     day_number: "1", category: "attraction" as LocationCategory,
     description: "", media_url: "",
   });
 
-  // Open itinerary sidebar on desktop by default
   useEffect(() => {
     if (window.matchMedia("(min-width: 768px)").matches) {
       setShowItinerary(true);
@@ -80,7 +100,7 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
 
   const handleMarkerClick = useCallback((loc: TripLocation) => {
     setActiveLocation(loc);
-    setShowItinerary(false); // focus on selected pin
+    setShowItinerary(false);
     flyTo(loc);
   }, [flyTo]);
 
@@ -143,61 +163,130 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   }, {});
   const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
 
-  // Shared itinerary list — rendered inside both desktop sidebar and mobile sheet
-  const itineraryItems = (
-    <div className="overflow-y-auto scroll-touch flex-1 pb-4">
-      {days.map((day) => (
-        <div key={day} className="py-1">
-          <p className="px-4 pt-3 pb-1 text-xs font-bold uppercase tracking-widest text-zinc-500">
-            Day {day}
-          </p>
-          {byDay[day].map((loc) => (
-            <button
-              key={loc.id}
-              onClick={() => handleMarkerClick(loc)}
-              className={`
-                w-full flex items-center gap-3 px-4 py-3 text-left
-                transition-colors active:bg-white/10
-                ${activeLocation?.id === loc.id ? "bg-white/8" : "hover:bg-white/5"}
-              `}
-            >
-              <span className={`cat-${loc.category} day-badge shrink-0`}>
-                {loc.name.charAt(0).toUpperCase()}
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm font-medium truncate">{loc.name}</span>
-                {loc.description && (
-                  <span className="block text-xs text-zinc-500 truncate mt-0.5">{loc.description}</span>
-                )}
-              </span>
-              {/* 44×44 touch target for delete */}
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => { e.stopPropagation(); handleDelete(loc.id); }}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); handleDelete(loc.id); } }}
-                className="shrink-0 flex items-center justify-center rounded-xl text-zinc-600
-                           hover:text-red-400 active:text-red-400 transition-colors"
-                style={{ minWidth: 44, minHeight: 44 }}
+  const filteredDays = dayFilter === "all" ? days : days.filter((d) => d === dayFilter);
+
+  const stopCount = locations.length;
+  const dayCount = days.length;
+
+  // Shared itinerary list
+  const itineraryList = (
+    <div className="overflow-y-auto scroll-touch scrollbar-thin" style={{ flex: 1, padding: "0 18px 18px" }}>
+      {filteredDays.map((day, di) => {
+        const palette = DAY_PALETTES[(day - 1) % DAY_PALETTES.length];
+        const dayLocs = byDay[day];
+        const dayIdx = days.indexOf(day);
+        const dayColor = DAY_PALETTES[dayIdx % DAY_PALETTES.length];
+        return (
+          <div key={day} style={{ marginBottom: 14 }}>
+            {/* Day header */}
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span className="mxj-serif" style={{ fontSize: 36, lineHeight: 0.9, color: dayColor }}>
+                  {String(day).padStart(2, "0")}
+                </span>
+                <div>
+                  <div className="mxj-mono" style={{ marginBottom: 2 }}>Day {day}</div>
+                </div>
+              </div>
+              <span className="mxj-mono">{dayLocs.length} stop{dayLocs.length !== 1 ? "s" : ""}</span>
+            </div>
+
+            {/* Stops */}
+            <div style={{ paddingLeft: 4 }}>
+              {dayLocs.map((loc) => (
+                <div
+                  key={loc.id}
+                  className={`mxj-stop ${activeLocation?.id === loc.id ? "is-active" : ""}`}
+                  style={{ padding: "8px 10px", alignItems: "flex-start", cursor: "pointer" }}
+                  onClick={() => handleMarkerClick(loc)}
+                >
+                  <span
+                    className="mxj-stop-marker"
+                    style={{ background: CATEGORY_META[loc.category].color, marginTop: 7, flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {loc.name}
+                      </span>
+                      <span className="mxj-mono" style={{ fontSize: 9, flexShrink: 0 }}>
+                        {CATEGORY_META[loc.category].glyph} {CATEGORY_META[loc.category].label}
+                      </span>
+                    </div>
+                    {loc.description && (
+                      <div className="mxj-mono" style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {loc.description}
+                      </div>
+                    )}
+                  </div>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(loc.id); }}
+                    style={{
+                      background: "none", border: "none", color: "var(--mxj-faint)",
+                      cursor: "pointer", padding: "4px 6px", flexShrink: 0,
+                      display: "flex", alignItems: "center",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = "#e07070")}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mxj-faint)")}
+                  >
+                    {Ico.trash}
+                  </button>
+                </div>
+              ))}
+
+              {/* Add stop ghost button */}
+              <button
+                className="mxj-btn mxj-btn-ghost"
+                onClick={() => {
+                  setAddForm((f) => ({ ...f, day_number: String(day) }));
+                  setShowAddPanel(true);
+                }}
+                style={{ padding: "6px 10px", marginLeft: 14, marginTop: 4, fontFamily: "var(--mxj-mono)", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase" }}
               >
-                <Trash2 className="w-3.5 h-3.5" />
-              </span>
-            </button>
-          ))}
-        </div>
-      ))}
+                {Ico.plus}<span>add stop</span>
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
       {locations.length === 0 && (
-        <p className="px-4 py-10 text-sm text-zinc-600 text-center leading-relaxed">
-          No stops yet.<br />Tap + to add your first location.
-        </p>
+        <div style={{ textAlign: "center", padding: "40px 0", color: "var(--mxj-muted)" }}>
+          <div className="mxj-mono">no stops yet</div>
+          <div style={{ marginTop: 8, fontSize: 13 }}>Tap + to add your first location.</div>
+        </div>
       )}
     </div>
   );
 
-  return (
-    <div className="relative w-screen overflow-hidden bg-black h-screen-safe">
+  // Day filter pill tabs
+  const dayTabs = (
+    <div className="mxj-pill-tabs" style={{ width: "100%" }}>
+      <button
+        className={`mxj-pill-tab ${dayFilter === "all" ? "is-active" : ""}`}
+        style={{ flex: 1 }}
+        onClick={() => setDayFilter("all")}
+      >
+        All
+      </button>
+      {days.map((d) => (
+        <button
+          key={d}
+          className={`mxj-pill-tab ${dayFilter === d ? "is-active" : ""}`}
+          style={{ flex: 1 }}
+          onClick={() => setDayFilter(d)}
+        >
+          Day {d}
+        </button>
+      ))}
+    </div>
+  );
 
-      {/* ── Full-screen 3D Map ──────────────────────────────── */}
+  return (
+    <div className="h-screen-safe" style={{ position: "relative", overflow: "hidden", background: "var(--mxj-bg)" }}>
+
+      {/* ── Full-screen 3D Map ── */}
       <Map3D
         ref={mapRef}
         apiKey={mapsApiKey}
@@ -207,93 +296,172 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         destination={trip.destination}
       />
 
-      {/* ── Desktop top bar (md+) ───────────────────────────── */}
-      <header className="hidden md:flex absolute top-0 left-0 right-0 z-20 items-center justify-between px-5 py-3 glass border-b border-white/8 animate-fade-in">
-        <div className="flex items-center gap-3">
-          <span className="text-base font-bold tracking-tight">{trip.name}</span>
-          <span className="text-xs text-zinc-500 font-mono">{trip.id.slice(0, 8)}…</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <ToolbarBtn icon={<Route className="w-4 h-4" />} label="Route" active={routeVisible} onClick={toggleRoute} />
-          <ToolbarBtn icon={<Bot className="w-4 h-4" />} label="AI" active={showConcierge} onClick={() => setShowConcierge((v) => !v)} />
-          <ToolbarBtn icon={<Film className="w-4 h-4" />} label={isRecording ? "Recording…" : "Export"} active={isRecording} onClick={handleCinematicExport} disabled={isRecording} />
-          <ToolbarBtn icon={<Share2 className="w-4 h-4" />} label="Share" onClick={handleShare} />
-          <ToolbarBtn icon={<Plus className="w-4 h-4" />} label="Add Pin" onClick={() => setShowAddPanel(true)} />
-        </div>
-      </header>
+      {/* ════════ DESKTOP (md+) ════════ */}
 
-      {/* ── Mobile compact floating top bar ─────────────────── */}
-      <header
-        className="md:hidden absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 animate-fade-in"
-        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 14px)", paddingBottom: 10 }}
-      >
-        <span className="glass rounded-2xl px-3.5 py-2 text-sm font-bold tracking-tight max-w-[60vw] truncate leading-none">
-          {trip.name}
-        </span>
-        <button
-          onClick={handleShare}
-          className="glass rounded-2xl text-zinc-300 active:bg-white/15 transition-colors flex items-center justify-center"
-          style={{ minWidth: 44, minHeight: 44 }}
-          aria-label="Share"
-        >
-          <Share2 className="w-4 h-4" />
-        </button>
-      </header>
-
-      {/* ── Desktop itinerary sidebar (md+) ─────────────────── */}
-      <aside className={`
-        hidden md:flex flex-col
-        absolute top-[57px] bottom-0 left-0 z-20 w-72 glass border-r border-white/8
-        transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]
-        ${showItinerary ? "translate-x-0" : "-translate-x-full"}
-      `}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/8 shrink-0">
-          <h2 className="text-sm font-semibold text-zinc-300">Itinerary</h2>
-          <button
-            onClick={() => setShowItinerary(false)}
-            className="text-zinc-500 hover:text-white p-1.5 rounded-lg transition-colors"
-            style={{ minWidth: 32, minHeight: 32 }}
+      {/* Desktop top bar */}
+      <div className="hidden md:flex" style={{
+        position: "absolute", top: 20, left: 20, right: 20,
+        justifyContent: "space-between", alignItems: "center", zIndex: 3,
+      }}>
+        {/* Left pill: back | Logo | trip info */}
+        <div className="mxj-glass" style={{ borderRadius: 14, padding: "10px 14px", display: "flex", alignItems: "center", gap: 14 }}>
+          <a
+            href="/"
+            style={{ background: "none", border: "none", color: "var(--mxj-ink)", cursor: "pointer", display: "flex", textDecoration: "none" }}
+            title="Back"
           >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        </div>
-        {itineraryItems}
-      </aside>
-
-      {!showItinerary && (
-        <button
-          onClick={() => setShowItinerary(true)}
-          className="hidden md:flex absolute top-[70px] left-3 z-20 glass rounded-lg p-2 hover:bg-white/10 transition-colors"
-        >
-          <ChevronRight className="w-4 h-4 text-zinc-300" />
-        </button>
-      )}
-
-      {/* ── Mobile itinerary bottom sheet ───────────────────── */}
-      <div
-        className={`
-          md:hidden absolute inset-x-0 z-30 above-nav
-          transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]
-          ${showItinerary ? "translate-y-0" : "translate-y-full"}
-        `}
-      >
-        <div className="glass rounded-t-3xl flex flex-col max-h-[65vh]">
-          <div className="sheet-handle" />
-          <div className="flex items-center justify-between px-4 pb-2 shrink-0">
-            <h2 className="text-sm font-semibold text-zinc-300">Itinerary</h2>
-            <button
-              onClick={() => setShowItinerary(false)}
-              className="text-zinc-500 active:text-white rounded-xl flex items-center justify-center"
-              style={{ minWidth: 44, minHeight: 44 }}
-            >
-              <X className="w-4 h-4" />
-            </button>
+            {Ico.back}
+          </a>
+          <hr style={{ width: 1, height: 22, background: "var(--mxj-stroke)", border: "none", margin: 0 }} />
+          <Logo size={16} />
+          <hr style={{ width: 1, height: 22, background: "var(--mxj-stroke)", border: "none", margin: 0 }} />
+          <div>
+            <div className="mxj-serif" style={{ fontSize: 18, lineHeight: 1 }}>{trip.name}</div>
+            <span className="mxj-mono">
+              {trip.destination ? `${trip.destination} · ` : ""}{dayCount > 0 ? `${dayCount} day${dayCount !== 1 ? "s" : ""} · ` : ""}{stopCount} stop{stopCount !== 1 ? "s" : ""}
+            </span>
           </div>
-          {itineraryItems}
+        </div>
+
+        {/* Right pill: share */}
+        <div className="mxj-glass" style={{ borderRadius: 999, padding: "6px 8px 6px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+          <button
+            className="mxj-btn"
+            style={{ padding: "7px 12px" }}
+            onClick={handleShare}
+          >
+            {Ico.share}<span>Share</span>
+          </button>
         </div>
       </div>
 
-      {/* ── Info Card ────────────────────────────────────────── */}
+      {/* Desktop itinerary sidebar */}
+      <div
+        className="hidden md:flex"
+        style={{
+          position: "absolute", top: 86, bottom: 20, left: 20,
+          width: 380, zIndex: 3,
+          flexDirection: "column",
+          transform: showItinerary ? "translateX(0)" : "translateX(calc(-100% - 20px))",
+          transition: "transform 0.3s cubic-bezier(0.16,1,0.3,1)",
+        }}
+      >
+        <div className="mxj-glass" style={{ borderRadius: 18, display: "flex", flexDirection: "column", overflow: "hidden", height: "100%" }}>
+          <div style={{ padding: "20px 22px 14px", flexShrink: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
+              <h2 className="mxj-serif" style={{ fontSize: 26, margin: 0 }}>Itinerary</h2>
+              <span className="mxj-mono" style={{ cursor: "pointer" }} onClick={() => setShowItinerary(false)}>✕ hide</span>
+            </div>
+            {dayTabs}
+          </div>
+          <hr className="mxj-divider" />
+          {itineraryList}
+        </div>
+      </div>
+
+      {/* Show itinerary toggle (desktop, when hidden) */}
+      {!showItinerary && (
+        <button
+          className="hidden md:flex mxj-glass"
+          onClick={() => setShowItinerary(true)}
+          title="Show itinerary"
+          style={{
+            position: "absolute", top: 94, left: 20, zIndex: 3,
+            width: 40, height: 40, borderRadius: "50%",
+            alignItems: "center", justifyContent: "center",
+            cursor: "pointer", color: "var(--mxj-ink)",
+            border: "1px solid var(--mxj-stroke)",
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+        </button>
+      )}
+
+      {/* Desktop right icon stack */}
+      <div className="hidden md:flex" style={{
+        position: "absolute", top: 86, right: 20,
+        flexDirection: "column", gap: 10, zIndex: 3,
+      }}>
+        <IconCircle label="Add stop" onClick={() => setShowAddPanel(true)}>{Ico.plus}</IconCircle>
+        <IconCircle label="Toggle route" active={routeVisible} onClick={toggleRoute}>{Ico.route}</IconCircle>
+        <IconCircle label={isRecording ? "Recording…" : "Cinematic"} active={isRecording} onClick={handleCinematicExport} disabled={isRecording}>{Ico.film}</IconCircle>
+        <hr className="mxj-divider" style={{ width: 24, margin: "4px auto" }} />
+        <IconCircle label="AI concierge" active={showConcierge} onClick={() => setShowConcierge((v) => !v)}>{Ico.sparkle}</IconCircle>
+      </div>
+
+      {/* ════════ MOBILE ════════ */}
+
+      {/* Mobile top bar */}
+      <div className="md:hidden" style={{
+        position: "absolute", top: 50, left: 14, right: 14,
+        display: "flex", gap: 8, zIndex: 3,
+      }}>
+        <a href="/" style={{ textDecoration: "none" }}>
+          <IconCircle size={38}>{Ico.back}</IconCircle>
+        </a>
+        <div className="mxj-glass" style={{ flex: 1, borderRadius: 19, padding: "8px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="mxj-serif" style={{ fontSize: 15, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {trip.name}
+            </div>
+            <span className="mxj-mono" style={{ fontSize: 9 }}>
+              {dayCount > 0 ? `${dayCount} day${dayCount !== 1 ? "s" : ""} · ` : ""}{stopCount} stop{stopCount !== 1 ? "s" : ""}
+            </span>
+          </div>
+        </div>
+        <IconCircle size={38} onClick={handleShare}>{Ico.share}</IconCircle>
+      </div>
+
+      {/* Mobile right action stack */}
+      <div className="md:hidden" style={{
+        position: "absolute", top: 110, right: 14,
+        display: "flex", flexDirection: "column", gap: 8, zIndex: 3,
+      }}>
+        <IconCircle size={40} active={routeVisible} onClick={toggleRoute}>{Ico.route}</IconCircle>
+        <IconCircle size={40} active={isRecording} onClick={handleCinematicExport} disabled={isRecording}>{Ico.film}</IconCircle>
+        <IconCircle size={40} active={showConcierge} onClick={() => setShowConcierge((v) => !v)}>{Ico.sparkle}</IconCircle>
+      </div>
+
+      {/* Mobile bottom sheet (always visible at mid) */}
+      <div
+        className="md:hidden mxj-glass-strong"
+        style={{
+          position: "absolute",
+          top: showItinerary ? 460 : "calc(100% - 100px)",
+          left: 0, right: 0, bottom: 0,
+          borderRadius: "24px 24px 0 0",
+          zIndex: 4,
+          display: "flex", flexDirection: "column", overflow: "hidden",
+          transition: "top 0.3s cubic-bezier(0.16,1,0.3,1)",
+        }}
+      >
+        {/* Handle */}
+        <div
+          style={{ padding: "8px 0", display: "flex", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+          onClick={() => setShowItinerary((v) => !v)}
+        >
+          <div style={{ width: 38, height: 4, borderRadius: 2, background: "var(--mxj-stroke-strong)" }} />
+        </div>
+
+        <div style={{ padding: "4px 18px 14px", flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+            <h2 className="mxj-serif" style={{ fontSize: 22, margin: 0 }}>Itinerary</h2>
+            <button
+              className="mxj-btn"
+              style={{ padding: "5px 10px", fontSize: 11 }}
+              onClick={() => setShowAddPanel(true)}
+            >
+              {Ico.plus}<span>Add</span>
+            </button>
+          </div>
+          {dayTabs}
+        </div>
+
+        {itineraryList}
+      </div>
+
+      {/* ── Overlays ── */}
+
       {activeLocation && (
         <InfoCard
           location={activeLocation}
@@ -302,7 +470,6 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         />
       )}
 
-      {/* ── AI Concierge ─────────────────────────────────────── */}
       {showConcierge && (
         <TravelConcierge
           trip={trip}
@@ -317,17 +484,16 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         />
       )}
 
-      {/* ── Add Pin panel ─────────────────────────────────────── */}
       {showAddPanel && (
         <AddPinPanel
           form={addForm}
           onChange={(k, v) => setAddForm((p) => ({ ...p, [k]: v }))}
           onSubmit={handleAddLocation}
           onClose={() => setShowAddPanel(false)}
+          days={days.length > 0 ? days : [1]}
         />
       )}
 
-      {/* ── Street View Portal ────────────────────────────────── */}
       {streetViewLocation && (
         <StreetViewPortal
           location={streetViewLocation}
@@ -335,60 +501,28 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         />
       )}
 
-      {/* ── Mobile bottom nav ─────────────────────────────────── */}
-      <nav className="md:hidden absolute bottom-0 inset-x-0 z-20 glass border-t border-white/8 safe-bot">
-        <div className="flex items-center justify-around h-14 px-1">
-          <MobileNavBtn
-            icon={<LayoutList className="w-5 h-5" />}
-            label="Places"
-            active={showItinerary}
-            onClick={() => {
-              setActiveLocation(null);
-              setShowItinerary((v) => !v);
-            }}
-          />
-          {/* Primary add button */}
-          <button
-            onClick={() => setShowAddPanel(true)}
-            className="flex flex-col items-center justify-center gap-0.5 rounded-2xl bg-sky-500 active:bg-sky-600 transition-colors px-4"
-            style={{ minHeight: 44 }}
-            aria-label="Add location"
-          >
-            <Plus className="w-5 h-5 text-white" />
-            <span className="text-[10px] font-semibold text-white/90">Add</span>
-          </button>
-          <MobileNavBtn
-            icon={<Route className="w-5 h-5" />}
-            label="Route"
-            active={routeVisible}
-            onClick={toggleRoute}
-          />
-          <MobileNavBtn
-            icon={<Bot className="w-5 h-5" />}
-            label="AI"
-            active={showConcierge}
-            onClick={() => setShowConcierge((v) => !v)}
-          />
-        </div>
-      </nav>
-
-      {/* ── Recording badge ───────────────────────────────────── */}
+      {/* Recording badge */}
       {isRecording && (
-        <div className="absolute bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 z-50 glass rounded-full px-5 py-2 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse-slow" />
-          <span className="text-sm font-medium text-red-400">Recording Flyover…</span>
+        <div className="mxj-glass" style={{
+          position: "absolute", bottom: 80, left: "50%", transform: "translateX(-50%)",
+          zIndex: 50, borderRadius: 999, padding: "8px 20px",
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: 4, background: "#e07070" }} className="mxj-pulse" />
+          <span style={{ fontSize: 13, fontWeight: 500, color: "#f6a0a0" }}>Recording Flyover…</span>
         </div>
       )}
     </div>
   );
 }
 
-// ── Desktop toolbar button ────────────────────────────────────
-function ToolbarBtn({
-  icon, label, active, onClick, disabled,
+// ── Circular icon button ──
+function IconCircle({
+  children, label, size = 42, active, onClick, disabled,
 }: {
-  icon: React.ReactNode;
-  label: string;
+  children: React.ReactNode;
+  label?: string;
+  size?: number;
   active?: boolean;
   onClick?: () => void;
   disabled?: boolean;
@@ -398,50 +532,32 @@ function ToolbarBtn({
       onClick={onClick}
       disabled={disabled}
       title={label}
-      className={`
-        flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-        transition-all disabled:opacity-50
-        ${active
-          ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
-          : "bg-white/5 text-zinc-400 border border-white/8 hover:bg-white/10 hover:text-white"}
-      `}
+      className={active ? "mxj-glass-strong" : "mxj-glass"}
+      style={{
+        width: size, height: size, borderRadius: "50%",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: disabled ? "default" : "pointer",
+        color: active ? "var(--mxj-accent)" : "var(--mxj-ink)",
+        border: "1px solid " + (active ? "rgba(232,140,100,0.6)" : "var(--mxj-stroke)"),
+        background: "none",
+        opacity: disabled ? 0.5 : 1,
+        flexShrink: 0,
+      }}
     >
-      {icon}
-      <span className="hidden md:inline">{label}</span>
+      {children}
     </button>
   );
 }
 
-// ── Mobile bottom nav button ──────────────────────────────────
-function MobileNavBtn({
-  icon, label, active, onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex flex-col items-center justify-center gap-0.5 rounded-xl transition-colors px-3
-        ${active ? "text-sky-400" : "text-zinc-500 active:text-zinc-200"}`}
-      style={{ minWidth: 56, minHeight: 44 }}
-    >
-      {icon}
-      <span className="text-[10px] font-medium">{label}</span>
-    </button>
-  );
-}
-
-// ── Add Pin panel — bottom sheet on mobile, centered modal on desktop ──
+// ── Add Pin panel ──
 function AddPinPanel({
-  form, onChange, onSubmit, onClose,
+  form, onChange, onSubmit, onClose, days,
 }: {
   form: Record<string, string>;
   onChange: (key: string, value: string) => void;
   onSubmit: () => void;
   onClose: () => void;
+  days: number[];
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
   const onChangeRef = useRef(onChange);
@@ -463,6 +579,7 @@ function AddPinPanel({
         onChangeRef.current("name", name);
         onChangeRef.current("latitude", place.geometry.location.lat().toString());
         onChangeRef.current("longitude", place.geometry.location.lng().toString());
+        if (searchRef.current) searchRef.current.value = name;
       });
     }
 
@@ -487,41 +604,57 @@ function AddPinPanel({
     ? `${parseFloat(form.latitude).toFixed(4)}, ${parseFloat(form.longitude).toFixed(4)}`
     : null;
 
-  const inputCls = "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-sky-500/50";
+  const availableDays = days.length > 0 ? days : [1, 2, 3];
 
   return (
-    // items-end = sheet slides up from bottom on mobile; md:items-center = centered modal on desktop
     <div
-      className="absolute inset-0 z-40 flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
+      style={{
+        position: "absolute", inset: 0, zIndex: 40,
+        display: "flex", alignItems: "flex-end",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.55)",
+        backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
+      }}
+      className="animate-fade-in md:items-center"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full glass overflow-y-auto scroll-touch rounded-t-3xl safe-bot md:overflow-visible md:rounded-2xl md:max-w-sm md:mx-4 md:w-full">
-        {/* Drag handle — mobile only */}
-        <div className="sheet-handle md:hidden" />
+      <div
+        className="mxj-glass-strong"
+        style={{
+          width: "100%", maxWidth: 420,
+          borderRadius: "24px 24px 0 0",
+          maxHeight: "90vh",
+          overflowY: "auto",
+          display: "flex", flexDirection: "column",
+        }}
+      >
+        {/* Handle */}
+        <div style={{ padding: "8px 0", display: "flex", justifyContent: "center", flexShrink: 0 }}>
+          <div style={{ width: 38, height: 4, borderRadius: 2, background: "var(--mxj-stroke-strong)" }} />
+        </div>
 
-        <div className="p-5 space-y-4">
+        <div style={{ padding: "4px 22px 32px", display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold flex items-center gap-2 text-base">
-              <MapPin className="w-4 h-4 text-sky-400" /> Add Location
-            </h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h2 className="mxj-serif" style={{ fontSize: 24, margin: 0 }}>Add Location</h2>
             <button
               onClick={onClose}
-              className="text-zinc-500 active:text-white rounded-xl flex items-center justify-center"
-              style={{ minWidth: 44, minHeight: 44 }}
+              style={{ background: "none", border: "none", color: "var(--mxj-muted)", cursor: "pointer", padding: 4 }}
             >
-              <X className="w-5 h-5" />
+              {Ico.close}
             </button>
           </div>
 
           {/* Place search */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-400 font-medium">Search place</label>
+          <div>
+            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Search place</span>
             <input
               ref={searchRef}
               type="text"
               defaultValue={form.name}
               placeholder="Trevi Fountain, Rome…"
+              className="mxj-input"
               onChange={(e) => {
                 if (!e.target.value) {
                   onChangeRef.current("name", "");
@@ -529,85 +662,127 @@ function AddPinPanel({
                   onChangeRef.current("longitude", "");
                 }
               }}
-              className={inputCls}
               autoFocus
             />
             {coordsLabel && (
-              <p className="text-xs text-emerald-400 flex items-center gap-1.5">
-                <span className="text-emerald-500">✓</span> {coordsLabel}
-              </p>
+              <div style={{ marginTop: 6, fontSize: 11, color: "#7ec896", fontFamily: "var(--mxj-mono)", letterSpacing: "0.1em" }}>
+                ✓ {coordsLabel}
+              </div>
             )}
           </div>
 
-          {/* Day */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-400 font-medium">Day</label>
-            <input
-              type="number"
-              value={form.day_number}
-              min="1"
-              onChange={(e) => onChange("day_number", e.target.value)}
-              placeholder="1"
-              className={inputCls}
-            />
+          {/* Day pills */}
+          <div>
+            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Day</span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {availableDays.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => onChange("day_number", String(d))}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 999,
+                    border: "1px solid",
+                    borderColor: form.day_number === String(d) ? "rgba(232,140,100,0.6)" : "var(--mxj-stroke)",
+                    background: form.day_number === String(d) ? "rgba(232,140,100,0.12)" : "transparent",
+                    color: form.day_number === String(d) ? "var(--mxj-accent)" : "var(--mxj-muted)",
+                    fontFamily: "var(--mxj-sans)", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                  }}
+                >
+                  Day {d}
+                </button>
+              ))}
+              {/* Allow new day */}
+              <button
+                onClick={() => onChange("day_number", String(Math.max(...availableDays) + 1))}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 999,
+                  border: "1px dashed var(--mxj-stroke)",
+                  background: "transparent",
+                  color: "var(--mxj-faint)",
+                  fontFamily: "var(--mxj-sans)", fontSize: 13, cursor: "pointer",
+                }}
+              >
+                + Day {Math.max(...availableDays) + 1}
+              </button>
+            </div>
           </div>
 
-          {/* Category */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-400 font-medium">Category</label>
-            <select
-              value={form.category}
-              onChange={(e) => onChange("category", e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-sky-500/50"
-            >
-              {CATEGORY_OPTIONS.map((c) => (
-                <option key={c} value={c} className="bg-zinc-900">
-                  {c.charAt(0).toUpperCase() + c.slice(1)}
-                </option>
-              ))}
-            </select>
+          {/* Category chips */}
+          <div>
+            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Category</span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {CATEGORY_OPTIONS.map((cat) => {
+                const meta = CATEGORY_META[cat];
+                const active = form.category === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => onChange("category", cat)}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 999,
+                      border: "1px solid",
+                      borderColor: active ? meta.color + "99" : "var(--mxj-stroke)",
+                      background: active ? meta.color + "22" : "transparent",
+                      color: active ? meta.color : "var(--mxj-muted)",
+                      fontFamily: "var(--mxj-sans)", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}
+                  >
+                    <span>{meta.glyph}</span>
+                    <span>{meta.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Description */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-400 font-medium">Description</label>
-            <input
-              type="text"
+          <div>
+            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Notes</span>
+            <textarea
               value={form.description}
               onChange={(e) => onChange("description", e.target.value)}
-              placeholder="Optional note…"
-              className={inputCls}
+              placeholder="What to do here, opening hours, tips…"
+              rows={3}
+              className="mxj-input"
+              style={{ resize: "vertical", height: "auto" }}
             />
           </div>
 
           {/* Media URL */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-400 font-medium">Media URL</label>
+          <div>
+            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Media URL</span>
             <input
               type="text"
               value={form.media_url}
               onChange={(e) => onChange("media_url", e.target.value)}
               placeholder="TikTok / Instagram / PDF"
-              className={inputCls}
+              className="mxj-input"
             />
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3 pt-1">
+          <div style={{ display: "flex", gap: 10 }}>
             <button
               onClick={onClose}
-              className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 text-sm
-                         text-zinc-400 active:bg-white/10 transition-colors"
+              className="mxj-btn mxj-btn-ghost"
+              style={{ flex: 1, justifyContent: "center", padding: "11px 0" }}
             >
               Cancel
             </button>
             <button
               onClick={onSubmit}
               disabled={!form.latitude || !form.longitude}
-              className="flex-1 py-3 rounded-xl bg-sky-500 active:bg-sky-600 disabled:opacity-40
-                         text-white font-semibold text-sm transition-colors"
+              className="mxj-btn mxj-btn-accent"
+              style={{
+                flex: 1, justifyContent: "center", padding: "11px 0",
+                opacity: !form.latitude || !form.longitude ? 0.4 : 1,
+              }}
             >
-              Add Pin
+              {Ico.pin} Add pin
             </button>
           </div>
         </div>

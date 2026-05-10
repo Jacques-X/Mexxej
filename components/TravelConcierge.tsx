@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, X, Bot, Loader2, MapPin } from "lucide-react";
 import type { Trip, TripLocation, ConciergeSuggestion, ConciergeMessage } from "@/types/trip";
 
 interface Props {
@@ -19,7 +18,7 @@ export default function TravelConcierge({ trip, locations, onSuggestion, onClose
   const [messages, setMessages] = useState<AssistantMessage[]>([
     {
       role: "assistant",
-      content: `Hey! I'm your AI travel concierge for **${trip.name}**. Ask me for restaurant recommendations, hidden gems, or anything about your itinerary — I'll fly the camera right there.`,
+      content: `Ask me for restaurant recommendations, hidden gems, or anything about your itinerary — I'll fly the camera right there.`,
     },
   ]);
   const [input, setInput] = useState("");
@@ -77,65 +76,86 @@ export default function TravelConcierge({ trip, locations, onSuggestion, onClose
 
   return (
     /*
-     * Mobile:  full-screen overlay that slides in. Safe-area padding on
-     *          top (notch/island) and bottom (home indicator).
-     * Desktop: right-edge sidebar, 320 px wide, below the top bar.
+     * Mobile: full-screen. Desktop: right sidebar below top bar.
      */
-    <aside className="
-      absolute z-30 glass flex flex-col animate-fade-in
-      inset-x-0 bottom-0 top-0
-      md:inset-x-auto md:top-[57px] md:right-0 md:w-80 md:border-l md:border-white/8
-    ">
+    <aside className="mxj-concierge-panel mxj-glass-strong animate-fade-in">
       {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 py-3 border-b border-white/8 shrink-0"
-        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
-      >
-        {/* On mobile pad the top for the notch; reset on desktop */}
-        <div
-          className="md:hidden absolute top-0 left-0 right-0"
-          style={{ height: "env(safe-area-inset-top, 0px)" }}
-        />
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20">
-            <Bot className="w-4 h-4 text-sky-400" />
+      <div style={{
+        display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+        padding: "20px 22px 16px",
+        paddingTop: "max(env(safe-area-inset-top, 0px), 20px)",
+        borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+          {/* Gradient avatar */}
+          <div style={{
+            width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+            background: "linear-gradient(135deg, var(--mxj-accent) 0%, var(--mxj-accent-soft) 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 18,
+          }}>
+            ✦
           </div>
           <div>
-            <p className="text-sm font-semibold">Travel Concierge</p>
-            <p className="text-xs text-zinc-500">Powered by Gemini</p>
+            <div className="mxj-serif" style={{ fontSize: 20, lineHeight: 1 }}>Concierge</div>
+            <span className="mxj-mono" style={{ marginTop: 4, display: "block" }}>
+              {locations.length} stop{locations.length !== 1 ? "s" : ""} in context
+            </span>
           </div>
         </div>
         <button
           onClick={onClose}
-          className="text-zinc-500 hover:text-white active:text-white rounded-xl
-                     flex items-center justify-center transition-colors"
-          style={{ minWidth: 44, minHeight: 44 }}
+          style={{
+            background: "none", border: "none", color: "var(--mxj-muted)",
+            cursor: "pointer", padding: 4, display: "flex", alignItems: "center",
+          }}
         >
-          <X className="w-5 h-5" />
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+            <path d="M3 3l10 10M13 3L3 13" />
+          </svg>
         </button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto scroll-touch p-4 space-y-4 scrollbar-thin">
+      <div
+        className="scroll-touch scrollbar-thin"
+        style={{ flex: 1, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}
+      >
         {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`
-              max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed
-              ${msg.role === "user"
-                ? "bg-sky-500 text-white rounded-tr-sm"
-                : "bg-white/6 border border-white/8 text-zinc-200 rounded-tl-sm"}
-            `}>
-              <p className="whitespace-pre-wrap">{msg.content}</p>
+          <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
+            <div
+              style={{
+                maxWidth: "85%",
+                padding: "10px 14px",
+                borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "4px 14px 14px 14px",
+                background: msg.role === "user"
+                  ? "rgba(232,140,100,0.18)"
+                  : "rgba(246,239,228,0.06)",
+                border: "1px solid " + (msg.role === "user"
+                  ? "rgba(232,140,100,0.3)"
+                  : "var(--mxj-stroke)"),
+                fontSize: 14, lineHeight: 1.55,
+                color: msg.role === "user" ? "#f6d0bb" : "var(--mxj-ink)",
+              }}
+            >
+              <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{msg.content}</p>
 
               {msg.suggestion && (
                 <button
                   onClick={() => onSuggestion(msg.suggestion!)}
-                  className="mt-2.5 flex items-center gap-1.5 text-xs font-semibold
-                             text-sky-300 active:text-white bg-sky-500/15 active:bg-sky-500/30
-                             border border-sky-500/30 rounded-lg px-3 py-1.5 transition-all w-full"
-                  style={{ minHeight: 44 }}
+                  className="mxj-btn"
+                  style={{
+                    marginTop: 10, width: "100%", justifyContent: "flex-start",
+                    padding: "8px 12px",
+                    background: "rgba(136,168,192,0.12)",
+                    borderColor: "rgba(136,168,192,0.35)",
+                    color: "var(--mxj-cool)",
+                    fontSize: 12,
+                  }}
                 >
-                  <MapPin className="w-3.5 h-3.5 shrink-0" />
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 14s5-4.5 5-9a5 5 0 10-10 0c0 4.5 5 9 5 9z"/><circle cx="8" cy="5.5" r="1.6"/>
+                  </svg>
                   Fly to {msg.suggestion.name}
                 </button>
               )}
@@ -144,42 +164,61 @@ export default function TravelConcierge({ trip, locations, onSuggestion, onClose
         ))}
 
         {loading && (
-          <div className="flex justify-start">
-            <div className="bg-white/6 border border-white/8 rounded-2xl rounded-tl-sm px-4 py-3">
-              <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
+          <div style={{ display: "flex", justifyContent: "flex-start" }}>
+            <div style={{
+              padding: "10px 16px",
+              borderRadius: "4px 14px 14px 14px",
+              background: "rgba(246,239,228,0.06)",
+              border: "1px solid var(--mxj-stroke)",
+              display: "flex", gap: 5, alignItems: "center",
+            }}>
+              {[0, 1, 2].map((n) => (
+                <span key={n} className="mxj-pulse" style={{
+                  width: 5, height: 5, borderRadius: "50%",
+                  background: "var(--mxj-muted)",
+                  animationDelay: `${n * 0.2}s`,
+                }} />
+              ))}
             </div>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input — safe-bot padding ensures it clears the home indicator */}
-      <div className="px-4 pt-2 pb-4 shrink-0 border-t border-white/8 safe-bot">
-        <div className="flex gap-2">
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask about restaurants, hidden gems…"
-            disabled={loading}
-            className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm
-                       placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-sky-500/50
-                       disabled:opacity-50"
-          />
-          <button
-            onClick={send}
-            disabled={loading || !input.trim()}
-            className="shrink-0 rounded-2xl bg-sky-500 active:bg-sky-600 disabled:opacity-40
-                       disabled:cursor-not-allowed text-white transition-colors flex items-center justify-center"
-            style={{ minWidth: 48, minHeight: 48 }}
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
-        <p className="text-xs text-zinc-700 mt-2 text-center">
-          {locations.length} location{locations.length !== 1 ? "s" : ""} in context
-        </p>
+      {/* Input */}
+      <div style={{
+        padding: "12px 18px",
+        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)",
+        borderTop: "1px solid var(--mxj-stroke)", flexShrink: 0,
+        display: "flex", gap: 10, alignItems: "center",
+      }}>
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask about restaurants, hidden gems…"
+          disabled={loading}
+          className="mxj-input"
+          style={{ flex: 1, padding: "10px 14px", opacity: loading ? 0.5 : 1 }}
+        />
+        <button
+          onClick={send}
+          disabled={loading || !input.trim()}
+          style={{
+            width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+            background: "var(--mxj-accent)", border: "none",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: loading || !input.trim() ? "default" : "pointer",
+            opacity: loading || !input.trim() ? 0.4 : 1,
+            transition: "opacity 0.15s",
+            color: "#1a1208",
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+            <path d="M2 8L14 2l-4 12-2-5z" />
+          </svg>
+        </button>
       </div>
     </aside>
   );

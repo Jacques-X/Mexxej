@@ -44,6 +44,13 @@ export async function deleteLocation(id: string): Promise<void> {
   await supabase.from("trip_locations").delete().eq("id", id);
 }
 
+export async function deleteTrip(id: string): Promise<void> {
+  // trip_locations are removed first to satisfy FK constraints
+  // (if the DB has ON DELETE CASCADE this is a no-op, but safe either way)
+  await supabase.from("trip_locations").delete().eq("trip_id", id);
+  await supabase.from("trips").delete().eq("id", id);
+}
+
 export async function uploadMedia(
   tripId: string,
   file: File
