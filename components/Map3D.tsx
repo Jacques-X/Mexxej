@@ -105,6 +105,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     script.src = `${CESIUM_BASE}Cesium.js`;
     script.async = true;
     script.onload = () => initCesium();
+    script.onerror = () => { cesiumReadyRef.current = false; };
     document.head.appendChild(script);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -120,12 +121,13 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
   }, [apiKey]);
 
   // ── Wait for Google Maps SDK to be available ─────────────
-  function waitForGoogleMaps(): Promise<void> {
-    return new Promise((resolve) => {
+  function waitForGoogleMaps(timeoutMs = 10_000): Promise<void> {
+    return new Promise((resolve, reject) => {
       if (typeof google !== "undefined") return resolve();
       const id = setInterval(() => {
         if (typeof google !== "undefined") { clearInterval(id); resolve(); }
       }, 100);
+      setTimeout(() => { clearInterval(id); reject(new Error("Google Maps SDK failed to load")); }, timeoutMs);
     });
   }
 
@@ -198,7 +200,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
         })
         .catch(() => {
           // Google 3D tiles unavailable — Bing satellite fallback stays active
-          console.info("[Map3D] Using Bing satellite fallback (Google 3D Tiles unavailable)");
         });
     }
 
@@ -333,7 +334,9 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       return new Promise<void>((resolve) => {
         const viewer = viewerRef.current;
         if (!viewer) return resolve();
+        const timeout = setTimeout(resolve, 8_000);
         const remove = viewer.camera.moveEnd.addEventListener(() => {
+          clearTimeout(timeout);
           remove();
           resolve();
         });

@@ -54,6 +54,7 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   const [showItinerary, setShowItinerary] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [routeVisible, setRouteVisible] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
   const [dayFilter, setDayFilter] = useState<number | "all">("all");
   const [addForm, setAddForm] = useState({
     name: "", latitude: "", longitude: "",
@@ -105,21 +106,27 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   }, [flyTo]);
 
   const handleAddLocation = async () => {
-    const newLoc = await addLocation({
-      trip_id: trip.id,
-      name: addForm.name,
-      latitude: parseFloat(addForm.latitude),
-      longitude: parseFloat(addForm.longitude),
-      day_number: parseInt(addForm.day_number),
-      category: addForm.category,
-      description: addForm.description || undefined,
-      media_url: addForm.media_url || undefined,
-      order_index: locations.filter((l) => l.day_number === parseInt(addForm.day_number)).length,
-    });
-    if (newLoc) {
-      setShowAddPanel(false);
-      setAddForm({ name: "", latitude: "", longitude: "", day_number: "1", category: "attraction", description: "", media_url: "" });
-      flyTo(newLoc);
+    if (isAdding) return;
+    setIsAdding(true);
+    try {
+      const newLoc = await addLocation({
+        trip_id: trip.id,
+        name: addForm.name,
+        latitude: parseFloat(addForm.latitude),
+        longitude: parseFloat(addForm.longitude),
+        day_number: parseInt(addForm.day_number),
+        category: addForm.category,
+        description: addForm.description || undefined,
+        media_url: addForm.media_url || undefined,
+        order_index: locations.filter((l) => l.day_number === parseInt(addForm.day_number)).length,
+      });
+      if (newLoc) {
+        setShowAddPanel(false);
+        setAddForm({ name: "", latitude: "", longitude: "", day_number: "1", category: "attraction", description: "", media_url: "" });
+        flyTo(newLoc);
+      }
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -491,6 +498,7 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
           onSubmit={handleAddLocation}
           onClose={() => setShowAddPanel(false)}
           days={days.length > 0 ? days : [1]}
+          isSubmitting={isAdding}
         />
       )}
 
@@ -551,21 +559,23 @@ function IconCircle({
 
 // ── Add Pin panel ──
 function AddPinPanel({
-  form, onChange, onSubmit, onClose, days,
+  form, onChange, onSubmit, onClose, days, isSubmitting,
 }: {
   form: Record<string, string>;
   onChange: (key: string, value: string) => void;
   onSubmit: () => void;
   onClose: () => void;
   days: number[];
+  isSubmitting?: boolean;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
   const onChangeRef = useRef(onChange);
-  useEffect(() => { onChangeRef.current = onChange; });
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let ac: any = null;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
     function attach() {
       if (!searchRef.current) return;
@@ -586,17 +596,22 @@ function AddPinPanel({
     if (typeof google !== "undefined" && google.maps?.places) {
       attach();
     } else {
-      const id = setInterval(() => {
+      intervalId = setInterval(() => {
         if (typeof google !== "undefined" && google.maps?.places) {
-          clearInterval(id);
+          clearInterval(intervalId!);
+          intervalId = null;
           attach();
         }
       }, 100);
-      return () => clearInterval(id);
+      // Stop polling after 15 s if Maps API never loads
+      setTimeout(() => {
+        if (intervalId) { clearInterval(intervalId); intervalId = null; }
+      }, 15_000);
     }
 
     return () => {
-      if (ac) google.maps.event.clearInstanceListeners(ac);
+      if (intervalId) clearInterval(intervalId);
+      if (ac && typeof google !== "undefined") google.maps.event.clearInstanceListeners(ac);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -775,14 +790,14 @@ function AddPinPanel({
             </button>
             <button
               onClick={onSubmit}
-              disabled={!form.latitude || !form.longitude}
+              disabled={!form.latitude || !form.longitude || isSubmitting}
               className="mxj-btn mxj-btn-accent"
               style={{
                 flex: 1, justifyContent: "center", padding: "11px 0",
-                opacity: !form.latitude || !form.longitude ? 0.4 : 1,
+                opacity: !form.latitude || !form.longitude || isSubmitting ? 0.4 : 1,
               }}
             >
-              {Ico.pin} Add pin
+              {Ico.pin} {isSubmitting ? "Adding…" : "Add pin"}
             </button>
           </div>
         </div>

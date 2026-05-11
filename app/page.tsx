@@ -23,10 +23,7 @@ async function createTrip(formData: FormData) {
     .insert({ name, destination })
     .select()
     .single();
-  if (error) {
-    console.error("Failed to create trip:", error.message);
-    return;
-  }
+  if (error) return;
   if (data) redirect(`/trip/${data.id}`);
 }
 
