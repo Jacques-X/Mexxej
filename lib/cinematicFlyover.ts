@@ -151,6 +151,6 @@ function getBounds(locs: TripLocation[]): {
   return {
     centerLat: (minLat + maxLat) / 2,
     centerLng: (minLng + maxLng) / 2,
-    span: Math.max(maxLat - minLat, maxLng - minLng),
+    span: Math.max(maxLat - minLat, maxLng - minLng, 0.01), // at least ~1 km
   };
 }

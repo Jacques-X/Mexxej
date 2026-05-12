@@ -140,8 +140,8 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
       mapRef.current?.clearRoute();
       setRouteVisible(false);
     } else {
-      await mapRef.current?.drawRoute(locations);
-      setRouteVisible(true);
+      const ok = await mapRef.current?.drawRoute(locations) ?? false;
+      if (ok) setRouteVisible(true);
     }
   };
 

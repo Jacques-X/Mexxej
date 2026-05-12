@@ -44,6 +44,22 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
     tiktokRef.current.appendChild(script);
   }, [type]);
 
+  // Instagram: load embed.js once; call process() if already loaded
+  useEffect(() => {
+    if (type !== "instagram") return;
+    const w = window as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (w.instgrm?.Embeds) {
+      w.instgrm.Embeds.process();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://www.instagram.com/embed.js";
+    script.async = true;
+    script.onload = () => w.instgrm?.Embeds?.process();
+    document.body.appendChild(script);
+    return () => { script.remove(); };
+  }, [type]);
+
   if (type === "tiktok") {
     const videoId = mediaUrl.split("/video/")[1]?.split("?")[0] ?? "";
     return (
@@ -69,7 +85,6 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
           data-instgrm-version="14"
           style={{ maxWidth: "100%", minWidth: "auto" }}
         />
-        {/* Instagram embed.js loaded once globally is the standard approach */}
       </div>
     );
   }

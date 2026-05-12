@@ -84,8 +84,14 @@ Respond ONLY with the JSON schema provided. Do not add any extra text outside th
   });
 
   const chat = model.startChat({ history: chatHistory });
-  const result = await chat.sendMessage(message);
-  const text = result.response.text();
+
+  let text: string;
+  try {
+    const result = await chat.sendMessage(message);
+    text = result.response.text();
+  } catch {
+    return NextResponse.json({ error: "AI service unavailable" }, { status: 503 });
+  }
 
   let parsed;
   try {

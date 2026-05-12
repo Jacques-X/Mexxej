@@ -17,21 +17,23 @@ export default function StreetViewPortal({ location, onClose }: Props) {
   const panoInstanceRef = useRef<google.maps.StreetViewPanorama | null>(null);
 
   useEffect(() => {
-    if (!panoRef.current || typeof google === "undefined") return;
+    if (!panoRef.current) return;
 
-    const sv = new google.maps.StreetViewService();
-    sv.getPanorama(
-      {
-        location: { lat: location.latitude, lng: location.longitude },
-        radius: 50,
-        preference: google.maps.StreetViewPreference.NEAREST,
-      },
-      (data, status) => {
-        if (status !== google.maps.StreetViewStatus.OK || !panoRef.current) return;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-        panoInstanceRef.current = new google.maps.StreetViewPanorama(
-          panoRef.current,
-          {
+    function init() {
+      if (!panoRef.current || typeof google === "undefined") return;
+      const sv = new google.maps.StreetViewService();
+      sv.getPanorama(
+        {
+          location: { lat: location.latitude, lng: location.longitude },
+          radius: 50,
+          preference: google.maps.StreetViewPreference.NEAREST,
+        },
+        (data, status) => {
+          if (status !== google.maps.StreetViewStatus.OK || !panoRef.current) return;
+          panoInstanceRef.current = new google.maps.StreetViewPanorama(panoRef.current, {
             pano: data!.location!.pano,
             pov: { heading: 0, pitch: 0 },
             zoom: 1,
@@ -39,12 +41,29 @@ export default function StreetViewPortal({ location, onClose }: Props) {
             showRoadLabels: false,
             motionTracking: false,
             motionTrackingControl: false,
-          }
-        );
-      }
-    );
+          });
+        }
+      );
+    }
+
+    if (typeof google !== "undefined") {
+      init();
+    } else {
+      intervalId = setInterval(() => {
+        if (typeof google !== "undefined") {
+          clearInterval(intervalId!);
+          intervalId = null;
+          init();
+        }
+      }, 100);
+      timeoutId = setTimeout(() => {
+        if (intervalId) { clearInterval(intervalId); intervalId = null; }
+      }, 5_000);
+    }
 
     return () => {
+      if (intervalId) clearInterval(intervalId);
+      if (timeoutId) clearTimeout(timeoutId);
       panoInstanceRef.current = null;
     };
   }, [location]);
