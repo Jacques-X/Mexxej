@@ -68,9 +68,8 @@ export default async function HomePage() {
       }} />
 
       {/* Top nav */}
-      <nav style={{
+      <nav className="mxj-page-nav" style={{
         position: "relative", zIndex: 1,
-        padding: "24px 36px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <Logo size={20} />
@@ -78,21 +77,20 @@ export default async function HomePage() {
       </nav>
 
       {/* Main column */}
-      <div style={{
+      <div className="mxj-page-col" style={{
         position: "relative", zIndex: 1,
         maxWidth: 980, margin: "0 auto",
-        padding: "0 24px 80px",
         display: "flex", flexDirection: "column", gap: 28,
       }}>
 
         {/* Hero card */}
-        <div id="create" className="mxj-glass" style={{
-          borderRadius: 24, padding: "36px 40px",
-          display: "flex", alignItems: "flex-end", gap: 32,
+        <div id="create" className="mxj-glass mxj-hero-card" style={{
+          borderRadius: 24,
+          display: "flex", alignItems: "flex-end", gap: 28,
           flexWrap: "wrap",
         }}>
           {/* Left: headline + tagline */}
-          <div style={{ flex: "1 1 300px" }}>
+          <div style={{ flex: "1 1 240px", minWidth: 0 }}>
             <span className="mxj-mono" style={{ display: "block", marginBottom: 14 }}>
               itineraries · just a link, no account
             </span>
@@ -113,7 +111,7 @@ export default async function HomePage() {
           </div>
 
           {/* Right: create form */}
-          <div style={{ width: 340, flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ width: "min(340px, 100%)", display: "flex", flexDirection: "column", gap: 10 }}>
             <span className="mxj-mono" style={{ display: "block", marginBottom: 4 }}>start a new trip</span>
             <form action={createTrip} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <input

@@ -309,29 +309,30 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
       <div className="hidden md:flex" style={{
         position: "absolute", top: 20, left: 20, right: 20,
         justifyContent: "space-between", alignItems: "center", zIndex: 3,
+        gap: 12, minWidth: 0,
       }}>
         {/* Left pill: back | Logo | trip info */}
-        <div className="mxj-glass" style={{ borderRadius: 14, padding: "10px 14px", display: "flex", alignItems: "center", gap: 14 }}>
+        <div className="mxj-glass" style={{ borderRadius: 14, padding: "10px 14px", display: "flex", alignItems: "center", gap: 14, minWidth: 0, overflow: "hidden" }}>
           <a
             href="/"
-            style={{ background: "none", border: "none", color: "var(--mxj-ink)", cursor: "pointer", display: "flex", textDecoration: "none" }}
+            style={{ background: "none", border: "none", color: "var(--mxj-ink)", cursor: "pointer", display: "flex", textDecoration: "none", flexShrink: 0 }}
             title="Back"
           >
             {Ico.back}
           </a>
-          <hr style={{ width: 1, height: 22, background: "var(--mxj-stroke)", border: "none", margin: 0 }} />
+          <hr style={{ width: 1, height: 22, background: "var(--mxj-stroke)", border: "none", margin: 0, flexShrink: 0 }} />
           <Logo size={16} />
-          <hr style={{ width: 1, height: 22, background: "var(--mxj-stroke)", border: "none", margin: 0 }} />
-          <div>
-            <div className="mxj-serif" style={{ fontSize: 18, lineHeight: 1 }}>{trip.name}</div>
-            <span className="mxj-mono">
+          <hr style={{ width: 1, height: 22, background: "var(--mxj-stroke)", border: "none", margin: 0, flexShrink: 0 }} />
+          <div style={{ minWidth: 0 }}>
+            <div className="mxj-serif" style={{ fontSize: 18, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{trip.name}</div>
+            <span className="mxj-mono" style={{ whiteSpace: "nowrap" }}>
               {trip.destination ? `${trip.destination} · ` : ""}{dayCount > 0 ? `${dayCount} day${dayCount !== 1 ? "s" : ""} · ` : ""}{stopCount} stop{stopCount !== 1 ? "s" : ""}
             </span>
           </div>
         </div>
 
         {/* Right pill: share */}
-        <div className="mxj-glass" style={{ borderRadius: 999, padding: "6px 8px 6px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+        <div className="mxj-glass" style={{ borderRadius: 999, padding: "6px 8px 6px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
           <button
             className="mxj-btn"
             style={{ padding: "7px 12px" }}
@@ -399,9 +400,11 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
       {/* ════════ MOBILE ════════ */}
 
       {/* Mobile top bar */}
-      <div className="md:hidden" style={{
-        position: "absolute", top: 50, left: 14, right: 14,
-        display: "flex", gap: 8, zIndex: 3,
+      <div className="md:hidden flex" style={{
+        position: "absolute",
+        top: "max(14px, env(safe-area-inset-top, 14px))",
+        left: 14, right: 14,
+        gap: 8, zIndex: 3,
       }}>
         <a href="/" style={{ textDecoration: "none" }}>
           <IconCircle size={38}>{Ico.back}</IconCircle>
@@ -420,9 +423,11 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
       </div>
 
       {/* Mobile right action stack */}
-      <div className="md:hidden" style={{
-        position: "absolute", top: 110, right: 14,
-        display: "flex", flexDirection: "column", gap: 8, zIndex: 3,
+      <div className="md:hidden flex flex-col" style={{
+        position: "absolute",
+        top: "calc(max(14px, env(safe-area-inset-top, 14px)) + 60px)",
+        right: 14,
+        gap: 8, zIndex: 3,
       }}>
         <IconCircle size={40} active={routeVisible} onClick={toggleRoute}>{Ico.route}</IconCircle>
         <IconCircle size={40} active={isRecording} onClick={handleCinematicExport} disabled={isRecording}>{Ico.film}</IconCircle>
@@ -431,14 +436,13 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
 
       {/* Mobile bottom sheet (always visible at mid) */}
       <div
-        className="md:hidden mxj-glass-strong"
+        className="md:hidden mxj-glass-strong flex flex-col overflow-hidden"
         style={{
           position: "absolute",
-          top: showItinerary ? 460 : "calc(100% - 100px)",
+          top: showItinerary ? "42vh" : "calc(100% - 88px)",
           left: 0, right: 0, bottom: 0,
           borderRadius: "24px 24px 0 0",
           zIndex: 4,
-          display: "flex", flexDirection: "column", overflow: "hidden",
           transition: "top 0.3s cubic-bezier(0.16,1,0.3,1)",
         }}
       >

@@ -260,6 +260,36 @@ body {
   flex-shrink: 0;
 }
 
+/* ── Home nav — responsive padding ────────────────────────── */
+.mxj-page-nav {
+  padding: 18px 16px;
+}
+@media (min-width: 640px) {
+  .mxj-page-nav {
+    padding: 24px 36px;
+  }
+}
+
+/* ── Page column — responsive horizontal padding ───────────── */
+.mxj-page-col {
+  padding: 0 14px 64px;
+}
+@media (min-width: 640px) {
+  .mxj-page-col {
+    padding: 0 24px 80px;
+  }
+}
+
+/* ── Hero card — responsive padding ───────────────────────── */
+.mxj-hero-card {
+  padding: 22px 18px;
+}
+@media (min-width: 640px) {
+  .mxj-hero-card {
+    padding: 36px 40px;
+  }
+}
+
 /* ── Google Maps 3D element ────────────────────────────────── */
 gmp-map-3d {
   display: block;
