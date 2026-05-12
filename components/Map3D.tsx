@@ -238,6 +238,37 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     viewerRef.current = viewer;
+
+    // Sync any pins that arrived before Cesium finished loading
+    locationsRef.current.forEach((loc) => {
+      if (entityMapRef.current.has(loc.id)) return;
+      const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
+      const letter = loc.name.charAt(0).toUpperCase();
+      const entity = viewer.entities.add({
+        id: loc.id,
+        position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
+        billboard: {
+          image: makePinSvg(color, letter),
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          width: 36, height: 48,
+        },
+        label: {
+          text: loc.name,
+          font: "bold 12px sans-serif",
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -52),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        },
+      });
+      entityMapRef.current.set(loc.id, entity.id as string);
+    });
   }, [apiKey, initialCenter, destination]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Listen for marker clicks (avoids stale closure) ──────
@@ -255,61 +286,52 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
   // ── Sync markers whenever locations change ────────────────
   useEffect(() => {
-    function runSync(): boolean {
-      const viewer = viewerRef.current;
-      if (!viewer) return false;
+    const viewer = viewerRef.current;
+    if (!viewer) return;
 
-      const incoming = new Set(locations.map((l) => l.id));
+    const incoming = new Set(locations.map((l) => l.id));
 
-      // Remove stale entities
-      entityMapRef.current.forEach((cesiumId, locId) => {
-        if (!incoming.has(locId)) {
-          viewer.entities.removeById(cesiumId);
-          entityMapRef.current.delete(locId);
-        }
+    // Remove stale entities
+    entityMapRef.current.forEach((cesiumId, locId) => {
+      if (!incoming.has(locId)) {
+        viewer.entities.removeById(cesiumId);
+        entityMapRef.current.delete(locId);
+      }
+    });
+
+    // Add new entities
+    locations.forEach((loc) => {
+      if (entityMapRef.current.has(loc.id)) return;
+      const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
+      const letter = loc.name.charAt(0).toUpperCase();
+
+      const entity = viewer.entities.add({
+        id: loc.id,
+        position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
+        billboard: {
+          image: makePinSvg(color, letter),
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          width: 36,
+          height: 48,
+        },
+        label: {
+          text: loc.name,
+          font: "bold 12px sans-serif",
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -52),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        },
       });
 
-      // Add new entities
-      locations.forEach((loc) => {
-        if (entityMapRef.current.has(loc.id)) return;
-        const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
-        const letter = loc.name.charAt(0).toUpperCase();
-        const entity = viewer.entities.add({
-          id: loc.id,
-          position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
-          billboard: {
-            image: makePinSvg(color, letter),
-            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            width: 36,
-            height: 48,
-          },
-          label: {
-            text: loc.name,
-            font: "bold 12px sans-serif",
-            fillColor: Cesium.Color.WHITE,
-            outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 2,
-            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-            pixelOffset: new Cesium.Cartesian2(0, -52),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          },
-        });
-        entityMapRef.current.set(loc.id, entity.id as string);
-      });
-      return true;
-    }
-
-    if (runSync()) return;
-
-    // Viewer not ready yet (Cesium still loading) — poll until it is
-    const id = setInterval(() => {
-      if (runSync()) clearInterval(id);
-    }, 200);
-    return () => clearInterval(id);
+      entityMapRef.current.set(loc.id, entity.id as string);
+    });
   }, [locations]);
 
   // ── Imperative handle ────────────────────────────────────
