@@ -189,17 +189,55 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     const viewer = new Cesium.Viewer(containerRef.current, viewerOptions);
     viewer.scene.globe.depthTestAgainstTerrain = true;
 
-    // Try Google Photorealistic 3D Tiles on top of the base layer
+    // Try Google Photorealistic 3D Tiles on top of the base layer.
+    // Initial markers are synced AFTER this decision so CLAMP_TO_GROUND
+    // entities don't race against globe.show = false.
+    const syncInitialMarkers = () => {
+      locationsRef.current.forEach((loc) => {
+        if (entityMapRef.current.has(loc.id)) return;
+        const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
+        const letter = loc.name.charAt(0).toUpperCase();
+        const entity = viewer.entities.add({
+          id: loc.id,
+          position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
+          billboard: {
+            image: makePinSvg(color, letter),
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            width: 36, height: 48,
+          },
+          label: {
+            text: loc.name,
+            font: "bold 12px sans-serif",
+            fillColor: Cesium.Color.WHITE,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -52),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          },
+        });
+        entityMapRef.current.set(loc.id, entity.id as string);
+      });
+    };
+
     if (apiKey) {
       Cesium.GoogleMaps.defaultApiKey = apiKey;
       Cesium.createGooglePhotorealistic3DTileset()
         .then((tileset: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
           viewer.scene.primitives.add(tileset);
           viewer.scene.globe.show = false; // hide flat globe; tiles take over
+          syncInitialMarkers();
         })
         .catch(() => {
           // Google 3D tiles unavailable — Bing satellite fallback stays active
+          syncInitialMarkers();
         });
+    } else {
+      syncInitialMarkers();
     }
 
     // Resolve the starting coordinate:
@@ -238,37 +276,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     viewerRef.current = viewer;
-
-    // Sync any pins that arrived before Cesium finished loading
-    locationsRef.current.forEach((loc) => {
-      if (entityMapRef.current.has(loc.id)) return;
-      const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
-      const letter = loc.name.charAt(0).toUpperCase();
-      const entity = viewer.entities.add({
-        id: loc.id,
-        position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
-        billboard: {
-          image: makePinSvg(color, letter),
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          width: 36, height: 48,
-        },
-        label: {
-          text: loc.name,
-          font: "bold 12px sans-serif",
-          fillColor: Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          pixelOffset: new Cesium.Cartesian2(0, -52),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-        },
-      });
-      entityMapRef.current.set(loc.id, entity.id as string);
-    });
   }, [apiKey, initialCenter, destination]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Listen for marker clicks (avoids stale closure) ──────
