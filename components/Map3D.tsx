@@ -22,7 +22,7 @@ export interface Map3DHandle {
   flyCameraAround: (position: CameraPosition, durationMs?: number, rounds?: number) => void;
   stopCamera: () => void;
   waitForAnimationEnd: () => Promise<void>;
-  drawRoute: (locations: TripLocation[]) => Promise<boolean>;
+  drawRoute: (locations: TripLocation[]) => Promise<void>;
   clearRoute: () => void;
   getMapElement: () => null;
 }
@@ -83,9 +83,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
   const routeEntityIdRef = useRef<string | null>(null);
   const cesiumReadyRef = useRef(false);
   const mapsReadyRef = useRef(false);
-  // Always-current mirror of the locations prop — read by initCesium on load
-  const locationsRef = useRef<TripLocation[]>(locations);
-  locationsRef.current = locations;
 
   // ── Load Cesium from CDN ─────────────────────────────────
   useEffect(() => {
@@ -157,6 +154,10 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     if (!containerRef.current || viewerRef.current) return;
 
     const ionToken = process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN;
+
+    // Try Google Photorealistic 3D Tiles first; fall back to
+    // Cesium Ion (Bing satellite + World Terrain) if unavailable.
+    const useGoogleTiles = !!(apiKey) && !!ionToken === false;
 
     if (ionToken) {
       Cesium.Ion.defaultAccessToken = ionToken;
@@ -238,37 +239,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     viewerRef.current = viewer;
-
-    // Sync any pins that arrived before Cesium finished loading
-    locationsRef.current.forEach((loc) => {
-      if (entityMapRef.current.has(loc.id)) return;
-      const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
-      const letter = loc.name.charAt(0).toUpperCase();
-      const entity = viewer.entities.add({
-        id: loc.id,
-        position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
-        billboard: {
-          image: makePinSvg(color, letter),
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          width: 36, height: 48,
-        },
-        label: {
-          text: loc.name,
-          font: "bold 12px sans-serif",
-          fillColor: Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          pixelOffset: new Cesium.Cartesian2(0, -52),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-        },
-      });
-      entityMapRef.current.set(loc.id, entity.id as string);
-    });
   }, [apiKey, initialCenter, destination]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Listen for marker clicks (avoids stale closure) ──────
@@ -375,8 +345,8 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
     async drawRoute(locs) {
       const viewer = viewerRef.current;
-      if (!viewer || locs.length < 2) return false;
-      if (typeof google === "undefined") return false;
+      if (!viewer || locs.length < 2) return;
+      if (typeof google === "undefined") return;
 
       // Clear existing route
       if (routeEntityIdRef.current) {
@@ -403,7 +373,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
           optimizeWaypoints: false,
         });
       } catch {
-        return false;
+        return;
       }
 
       const positions: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -430,7 +400,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
         },
       });
       routeEntityIdRef.current = entity.id as string;
-      return true;
     },
 
     clearRoute() {
