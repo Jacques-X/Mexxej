@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { deleteTrip } from "@/lib/supabase";
 import type { Trip } from "@/types/trip";
@@ -37,6 +38,7 @@ async function removeTripAction(formData: FormData) {
   "use server";
   const id = (formData.get("id") as string)?.trim();
   if (id) await deleteTrip(id);
+  revalidatePath("/");
 }
 
 function formatDate(iso: string) {
