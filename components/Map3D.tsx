@@ -189,55 +189,17 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     const viewer = new Cesium.Viewer(containerRef.current, viewerOptions);
     viewer.scene.globe.depthTestAgainstTerrain = true;
 
-    // Try Google Photorealistic 3D Tiles on top of the base layer.
-    // Initial markers are synced AFTER this decision so CLAMP_TO_GROUND
-    // entities don't race against globe.show = false.
-    const syncInitialMarkers = () => {
-      locationsRef.current.forEach((loc) => {
-        if (entityMapRef.current.has(loc.id)) return;
-        const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
-        const letter = loc.name.charAt(0).toUpperCase();
-        const entity = viewer.entities.add({
-          id: loc.id,
-          position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
-          billboard: {
-            image: makePinSvg(color, letter),
-            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            width: 36, height: 48,
-          },
-          label: {
-            text: loc.name,
-            font: "bold 12px sans-serif",
-            fillColor: Cesium.Color.WHITE,
-            outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 2,
-            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-            pixelOffset: new Cesium.Cartesian2(0, -52),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          },
-        });
-        entityMapRef.current.set(loc.id, entity.id as string);
-      });
-    };
-
+    // Try Google Photorealistic 3D Tiles on top of the base layer
     if (apiKey) {
       Cesium.GoogleMaps.defaultApiKey = apiKey;
       Cesium.createGooglePhotorealistic3DTileset()
         .then((tileset: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
           viewer.scene.primitives.add(tileset);
           viewer.scene.globe.show = false; // hide flat globe; tiles take over
-          syncInitialMarkers();
         })
         .catch(() => {
           // Google 3D tiles unavailable — Bing satellite fallback stays active
-          syncInitialMarkers();
         });
-    } else {
-      syncInitialMarkers();
     }
 
     // Resolve the starting coordinate:
@@ -293,52 +255,61 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
   // ── Sync markers whenever locations change ────────────────
   useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
+    function runSync(): boolean {
+      const viewer = viewerRef.current;
+      if (!viewer) return false;
 
-    const incoming = new Set(locations.map((l) => l.id));
+      const incoming = new Set(locations.map((l) => l.id));
 
-    // Remove stale entities
-    entityMapRef.current.forEach((cesiumId, locId) => {
-      if (!incoming.has(locId)) {
-        viewer.entities.removeById(cesiumId);
-        entityMapRef.current.delete(locId);
-      }
-    });
-
-    // Add new entities
-    locations.forEach((loc) => {
-      if (entityMapRef.current.has(loc.id)) return;
-      const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
-      const letter = loc.name.charAt(0).toUpperCase();
-
-      const entity = viewer.entities.add({
-        id: loc.id,
-        position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
-        billboard: {
-          image: makePinSvg(color, letter),
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          width: 36,
-          height: 48,
-        },
-        label: {
-          text: loc.name,
-          font: "bold 12px sans-serif",
-          fillColor: Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          pixelOffset: new Cesium.Cartesian2(0, -52),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-        },
+      // Remove stale entities
+      entityMapRef.current.forEach((cesiumId, locId) => {
+        if (!incoming.has(locId)) {
+          viewer.entities.removeById(cesiumId);
+          entityMapRef.current.delete(locId);
+        }
       });
 
-      entityMapRef.current.set(loc.id, entity.id as string);
-    });
+      // Add new entities
+      locations.forEach((loc) => {
+        if (entityMapRef.current.has(loc.id)) return;
+        const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
+        const letter = loc.name.charAt(0).toUpperCase();
+        const entity = viewer.entities.add({
+          id: loc.id,
+          position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
+          billboard: {
+            image: makePinSvg(color, letter),
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            width: 36,
+            height: 48,
+          },
+          label: {
+            text: loc.name,
+            font: "bold 12px sans-serif",
+            fillColor: Cesium.Color.WHITE,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -52),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          },
+        });
+        entityMapRef.current.set(loc.id, entity.id as string);
+      });
+      return true;
+    }
+
+    if (runSync()) return;
+
+    // Viewer not ready yet (Cesium still loading) — poll until it is
+    const id = setInterval(() => {
+      if (runSync()) clearInterval(id);
+    }, 200);
+    return () => clearInterval(id);
   }, [locations]);
 
   // ── Imperative handle ────────────────────────────────────
