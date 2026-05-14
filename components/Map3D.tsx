@@ -97,7 +97,10 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       const carto    = C.Cartographic.fromDegrees(loc.longitude, loc.latitude);
       const [result] = await viewer.scene.sampleHeightMostDetailed([carto]);
       if (result?.height != null) groundHeight = result.height;
-    } catch { /* tiles not loaded yet — base placed at ellipsoid surface */ }
+    } catch (err) {
+      // Non-fatal: tiles may not be loaded yet; marker placed at ellipsoid surface
+      console.warn("Map3D: height sampling failed for", loc.name, err);
+    }
 
     const STEM_H = 42;  // metres tall
     const HEAD_R = 13;  // sphere radius in metres
@@ -215,6 +218,9 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((window as any).google?.maps) {
         center = (await geocodeDestination(destination)) ?? undefined;
+      }
+      if (!center) {
+        console.warn(`Map3D: geocoding failed for "${destination}", defaulting camera to Rome`);
       }
     }
     center ??= { lat: 41.9028, lng: 12.4964 }; // Rome default

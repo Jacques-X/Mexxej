@@ -9,11 +9,19 @@ export const runtime = "nodejs";
 const UPSTREAM = "https://tile.googleapis.com/v1/3dtiles";
 const API_KEY  = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!;
 
+// Only allow path segments that look like real Cesium/Google tile paths
+const SAFE_SEGMENT = /^[a-zA-Z0-9._\-~%]+$/;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path } = await params;
+
+  if (!path.every((seg) => SAFE_SEGMENT.test(seg))) {
+    return new NextResponse(null, { status: 400 });
+  }
+
   const tileUrl = new URL(`${UPSTREAM}/${path.join("/")}`);
 
   // Add the API key server-side; forward any other query params Cesium sends
@@ -52,7 +60,6 @@ export async function GET(
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Access-Control-Allow-Origin": "*",
         "Cache-Control": "public, max-age=300",
       },
     });
@@ -64,7 +71,6 @@ export async function GET(
     status: 200,
     headers: {
       "Content-Type": contentType,
-      "Access-Control-Allow-Origin": "*",
       "Cache-Control": "public, max-age=86400",
     },
   });

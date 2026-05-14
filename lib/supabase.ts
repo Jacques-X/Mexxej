@@ -9,34 +9,49 @@ export const supabase = createClient(url, anonKey);
 // ─── Typed helpers ────────────────────────────────────────────
 
 export async function getTripById(id: string): Promise<Trip | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("trips")
     .select("*")
     .eq("id", id)
     .single();
+  if (error && error.code !== "PGRST116") throw new Error(error.message);
   return data;
 }
 
 export async function getLocationsByTrip(
   tripId: string
 ): Promise<TripLocation[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("trip_locations")
     .select("*")
     .eq("trip_id", tripId)
     .order("day_number", { ascending: true })
     .order("order_index", { ascending: true });
+  if (error) throw new Error(error.message);
   return data ?? [];
 }
 
 export async function addLocation(
-  location: Omit<TripLocation, "id" | "created_at">
+  location: Omit<TripLocation, "id" | "created_at" | "order_index">
 ): Promise<TripLocation | null> {
-  const { data } = await supabase
+  // Query current max to avoid race condition from stale client-side counts
+  const { data: maxRow } = await supabase
     .from("trip_locations")
-    .insert(location)
+    .select("order_index")
+    .eq("trip_id", location.trip_id)
+    .eq("day_number", location.day_number)
+    .order("order_index", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const order_index = maxRow ? maxRow.order_index + 1 : 0;
+
+  const { data, error } = await supabase
+    .from("trip_locations")
+    .insert({ ...location, order_index })
     .select()
     .single();
+  if (error) throw new Error(error.message);
   return data;
 }
 

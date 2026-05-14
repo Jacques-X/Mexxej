@@ -18,6 +18,17 @@ interface Props {
 
 const DAY_PALETTES = ["#e88c64", "#d8a478", "#88a8c0", "#c8b894", "#9aa4b0"];
 
+function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 const CATEGORY_META: Record<LocationCategory, { label: string; glyph: string; color: string }> = {
   hotel:       { label: "Hotel",       glyph: "◑", color: "#d8a478" },
   restaurant:  { label: "Restaurant",  glyph: "◆", color: "#e88c64" },
@@ -56,6 +67,7 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   const [routeVisible, setRouteVisible] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
   const [dayFilter, setDayFilter] = useState<number | "all">("all");
   const [addForm, setAddForm] = useState({
     name: "", latitude: "", longitude: "",
@@ -108,24 +120,42 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
 
   const handleAddLocation = async () => {
     if (isAdding) return;
+
+    const lat = parseFloat(addForm.latitude);
+    const lng = parseFloat(addForm.longitude);
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      setAddError("Invalid coordinates. Please search for a place again.");
+      setTimeout(() => setAddError(null), 3000);
+      return;
+    }
+
+    const nearby = locations.find((l) => distanceMeters(lat, lng, l.latitude, l.longitude) < 50);
+    if (nearby) {
+      setAddError(`"${nearby.name}" is already at this location.`);
+      setTimeout(() => setAddError(null), 3000);
+      return;
+    }
+
     setIsAdding(true);
     try {
       const newLoc = await addLocation({
         trip_id: trip.id,
         name: addForm.name,
-        latitude: parseFloat(addForm.latitude),
-        longitude: parseFloat(addForm.longitude),
+        latitude: lat,
+        longitude: lng,
         day_number: parseInt(addForm.day_number),
         category: addForm.category,
         description: addForm.description || undefined,
         media_url: addForm.media_url || undefined,
-        order_index: locations.filter((l) => l.day_number === parseInt(addForm.day_number)).length,
       });
       if (newLoc) {
         setShowAddPanel(false);
         setAddForm({ name: "", latitude: "", longitude: "", day_number: "1", category: "attraction", description: "", media_url: "" });
         flyTo(newLoc);
       }
+    } catch (err) {
+      setAddError("Failed to add location. Please try again.");
+      setTimeout(() => setAddError(null), 3000);
     } finally {
       setIsAdding(false);
     }
@@ -278,11 +308,12 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
 
   // Day filter pill tabs
   const dayTabs = (
-    <div className="mxj-pill-tabs" style={{ width: "100%" }}>
+    <div className="mxj-pill-tabs" style={{ width: "100%" }} role="group" aria-label="Filter by day">
       <button
         className={`mxj-pill-tab ${dayFilter === "all" ? "is-active" : ""}`}
         style={{ flex: 1 }}
         onClick={() => setDayFilter("all")}
+        aria-pressed={dayFilter === "all"}
       >
         All
       </button>
@@ -292,6 +323,7 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
           className={`mxj-pill-tab ${dayFilter === d ? "is-active" : ""}`}
           style={{ flex: 1 }}
           onClick={() => setDayFilter(d)}
+          aria-pressed={dayFilter === d}
         >
           Day {d}
         </button>
@@ -545,7 +577,22 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         </div>
       )}
 
-      {/* Error toast */}
+      {/* Add error toast */}
+      {addError && (
+        <div className="mxj-glass" style={{
+          position: "absolute", bottom: 80, left: "50%", transform: "translateX(-50%)",
+          zIndex: 50, borderRadius: 12, padding: "12px 20px",
+          display: "flex", alignItems: "center", gap: 8,
+          background: "rgba(224, 112, 112, 0.15)",
+          border: "1px solid rgba(224, 112, 112, 0.4)",
+          whiteSpace: "nowrap",
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: 3, background: "#e07070", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: "#e07070" }}>{addError}</span>
+        </div>
+      )}
+
+      {/* Delete error toast */}
       {deleteError && (
         <div className="mxj-glass" style={{
           position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
@@ -661,6 +708,8 @@ function AddPinPanel({
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
+  // Intentionally empty deps: re-running would tear down and recreate the
+  // Google Places widget while the user is typing, causing a focus-loss bug.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const coordsLabel = form.latitude

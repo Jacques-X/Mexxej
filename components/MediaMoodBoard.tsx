@@ -7,7 +7,7 @@
 //   • YouTube → iframe
 
 import { useEffect, useRef } from "react";
-import { FileText, ExternalLink } from "lucide-react";
+import { FileText, ExternalLink, AlertCircle } from "lucide-react";
 
 interface Props {
   mediaUrl: string;
@@ -15,6 +15,26 @@ interface Props {
 }
 
 type MediaType = "tiktok" | "instagram" | "youtube" | "pdf" | "image" | "unknown";
+
+// Only allow embedding content from these known-safe hosts
+const ALLOWED_HOSTS = [
+  "www.youtube.com", "youtube.com", "youtu.be",
+  "www.tiktok.com", "tiktok.com",
+  "www.instagram.com", "instagram.com",
+];
+
+function isSafeUrl(url: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(url);
+    if (protocol !== "https:") return false;
+    if (ALLOWED_HOSTS.includes(hostname)) return true;
+    // Supabase storage URLs are safe (project.supabase.co)
+    if (hostname.endsWith(".supabase.co")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 function detectType(url: string): MediaType {
   if (/tiktok\.com/i.test(url)) return "tiktok";
@@ -32,7 +52,8 @@ function youtubeEmbedUrl(url: string): string {
 }
 
 export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
-  const type = detectType(mediaUrl);
+  const safe = isSafeUrl(mediaUrl);
+  const type = safe ? detectType(mediaUrl) : "unknown";
   const tiktokRef = useRef<HTMLDivElement>(null);
 
   // TikTok requires their JS script to process the blockquote
@@ -62,6 +83,14 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
 
   if (type === "tiktok") {
     const videoId = mediaUrl.split("/video/")[1]?.split("?")[0] ?? "";
+    if (!videoId) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)" }}>
+          <AlertCircle style={{ width: 14, height: 14, color: "#e07070", flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: "#e07070" }}>Invalid TikTok URL — paste a link like tiktok.com/@user/video/123</span>
+        </div>
+      );
+    }
     return (
       <div ref={tiktokRef} style={{ borderRadius: 12, overflow: "hidden", background: "rgba(0,0,0,0.3)" }}>
         <blockquote
@@ -123,6 +152,7 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
           src={mediaUrl}
           style={{ width: "100%", height: 160, borderRadius: 8, marginTop: 8, border: "none" }}
           title={`${locationName} PDF`}
+          sandbox="allow-same-origin"
         />
       </div>
     );
@@ -140,7 +170,17 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
     );
   }
 
-  // Fallback: plain link
+  // Blocked URL: show a warning instead of rendering an unsafe embed/link
+  if (!safe) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)" }}>
+        <AlertCircle style={{ width: 14, height: 14, color: "#e07070", flexShrink: 0 }} />
+        <span style={{ fontSize: 12, color: "#e07070" }}>Unsupported URL — use YouTube, TikTok, Instagram, or a Supabase storage link</span>
+      </div>
+    );
+  }
+
+  // Fallback: plain link for supabase URLs that didn't match a media type
   return (
     <a
       href={mediaUrl}

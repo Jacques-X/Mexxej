@@ -8,6 +8,29 @@ import type { TripLocation } from "@/types/trip";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+// ── In-memory rate limiter: 5 requests per IP per 60 s ────────
+const rateLimitMap = new Map<string, number[]>();
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 5;
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const timestamps = (rateLimitMap.get(ip) ?? []).filter(
+    (t) => now - t < RATE_WINDOW_MS
+  );
+  if (timestamps.length >= RATE_MAX) return true;
+  rateLimitMap.set(ip, [...timestamps, now]);
+  return false;
+}
+
+// Strip control characters and cap length to prevent prompt injection
+function sanitizeForPrompt(s: string, maxLen = 300): string {
+  return s
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "")
+    .trim()
+    .slice(0, maxLen);
+}
+
 // Structured output schema — Gemini will always return this shape
 const responseSchema = {
   type: SchemaType.OBJECT,
@@ -45,18 +68,33 @@ interface RequestBody {
 }
 
 export async function POST(req: NextRequest) {
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    req.headers.get("x-real-ip") ??
+    "unknown";
+
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: "Too many requests. Please wait a moment." },
+      { status: 429 }
+    );
+  }
+
   const body: RequestBody = await req.json();
   const { tripName, locations, message, history } = body;
+
+  // Sanitize all user-supplied strings before embedding in the prompt
+  const safeTripName = sanitizeForPrompt(tripName, 100);
 
   // Build a concise itinerary summary for the system prompt
   const itinerarySummary = locations
     .map(
       (l) =>
-        `  Day ${l.day_number} | ${l.category} | ${l.name} (${l.latitude.toFixed(4)}, ${l.longitude.toFixed(4)})${l.description ? ` — ${l.description}` : ""}`
+        `  Day ${l.day_number} | ${l.category} | ${sanitizeForPrompt(l.name, 100)} (${l.latitude.toFixed(4)}, ${l.longitude.toFixed(4)})${l.description ? ` — ${sanitizeForPrompt(l.description, 200)}` : ""}`
     )
     .join("\n");
 
-  const systemPrompt = `You are an expert travel concierge AI for the trip "${tripName}".
+  const systemPrompt = `You are an expert travel concierge AI for the trip "${safeTripName}".
 Your role: suggest specific real-world places, restaurants, attractions, and hidden gems.
 Always respond with valid coordinates for an actual existing location.
 Be warm, enthusiastic, and specific — mention prices, opening times, or local tips when relevant.
@@ -97,8 +135,9 @@ Respond ONLY with the JSON schema provided. Do not add any extra text outside th
   try {
     parsed = JSON.parse(text);
   } catch {
+    console.error("Concierge: failed to parse AI response", text);
     return NextResponse.json(
-      { error: "Failed to parse AI response", raw: text },
+      { error: "Failed to parse AI response" },
       { status: 502 }
     );
   }
