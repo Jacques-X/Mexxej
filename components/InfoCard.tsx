@@ -7,6 +7,7 @@ interface Props {
   location: TripLocation;
   onClose: () => void;
   onStreetView: (location: TripLocation) => void;
+  onDelete?: (id: string) => void;
 }
 
 const CATEGORY_META: Record<LocationCategory, { label: string; glyph: string; color: string }> = {
@@ -17,7 +18,7 @@ const CATEGORY_META: Record<LocationCategory, { label: string; glyph: string; co
   other:       { label: "Other",       glyph: "·", color: "#9aa4b0" },
 };
 
-export default function InfoCard({ location, onClose, onStreetView }: Props) {
+export default function InfoCard({ location, onClose, onStreetView, onDelete }: Props) {
   const navigationUrl = `https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}&travelmode=walking`;
   const meta = CATEGORY_META[location.category];
 
@@ -111,30 +112,69 @@ export default function InfoCard({ location, onClose, onStreetView }: Props) {
         )}
 
         {/* Actions */}
-        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-          <button
-            onClick={() => onStreetView(location)}
-            className="mxj-btn mxj-btn-ghost"
-            style={{ flex: 1, justifyContent: "center", padding: "12px 0" }}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-              <circle cx="8" cy="6" r="2.5" /><path d="M3.5 14c.5-3 2.3-4.5 4.5-4.5s4 1.5 4.5 4.5" />
-            </svg>
-            Street View
-          </button>
+        <div style={{ display: "flex", gap: 10, marginTop: 4, flexDirection: onDelete ? "column" : "row" }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={() => onStreetView(location)}
+              className="mxj-btn mxj-btn-ghost"
+              style={{ flex: 1, justifyContent: "center", padding: "12px 0" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                <circle cx="8" cy="6" r="2.5" /><path d="M3.5 14c.5-3 2.3-4.5 4.5-4.5s4 1.5 4.5 4.5" />
+              </svg>
+              Street View
+            </button>
 
-          <a
-            href={navigationUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mxj-btn mxj-btn-accent"
-            style={{ flex: 1, justifyContent: "center", padding: "12px 0", textDecoration: "none" }}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
-              <path d="M3 8l10-5-3 12-2-5z" />
-            </svg>
-            Take Me There
-          </a>
+            <a
+              href={navigationUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mxj-btn mxj-btn-accent"
+              style={{ flex: 1, justifyContent: "center", padding: "12px 0", textDecoration: "none" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+                <path d="M3 8l10-5-3 12-2-5z" />
+              </svg>
+              Take Me There
+            </a>
+          </div>
+
+          {onDelete && (
+            <button
+              onClick={() => {
+                onDelete(location.id);
+                onClose();
+              }}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 12,
+                border: "1px solid rgba(224, 112, 112, 0.4)",
+                background: "rgba(224, 112, 112, 0.08)",
+                color: "#e07070",
+                fontFamily: "var(--mxj-sans)",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(224, 112, 112, 0.15)";
+                e.currentTarget.style.borderColor = "rgba(224, 112, 112, 0.6)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(224, 112, 112, 0.08)";
+                e.currentTarget.style.borderColor = "rgba(224, 112, 112, 0.4)";
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M3 4h10M6 4V2.5h4V4M5 4l.5 9h5L11 4M7 7v3M9 7v3" />
+              </svg>
+              Delete pin
+            </button>
+          )}
         </div>
       </div>
     </div>

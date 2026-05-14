@@ -63,7 +63,7 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
   if (type === "tiktok") {
     const videoId = mediaUrl.split("/video/")[1]?.split("?")[0] ?? "";
     return (
-      <div ref={tiktokRef} className="rounded-xl overflow-hidden bg-black/30">
+      <div ref={tiktokRef} style={{ borderRadius: 12, overflow: "hidden", background: "rgba(0,0,0,0.3)" }}>
         <blockquote
           className="tiktok-embed"
           cite={mediaUrl}
@@ -78,7 +78,7 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
 
   if (type === "instagram") {
     return (
-      <div className="rounded-xl overflow-hidden bg-black/30">
+      <div style={{ borderRadius: 12, overflow: "hidden", background: "rgba(0,0,0,0.3)" }}>
         <blockquote
           className="instagram-media"
           data-instgrm-permalink={mediaUrl}
@@ -91,10 +91,10 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
 
   if (type === "youtube") {
     return (
-      <div className="rounded-xl overflow-hidden aspect-video bg-black/30">
+      <div style={{ borderRadius: 12, overflow: "hidden", aspectRatio: "16/9", background: "rgba(0,0,0,0.3)" }}>
         <iframe
           src={youtubeEmbedUrl(mediaUrl)}
-          className="w-full h-full"
+          style={{ width: "100%", height: "100%", border: "none" }}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
           title={`${locationName} video`}
@@ -105,21 +105,23 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
 
   if (type === "pdf") {
     return (
-      <div className="rounded-xl overflow-hidden bg-black/30 flex flex-col items-center gap-2 py-4 px-3">
-        <FileText className="w-8 h-8 text-zinc-400" />
-        <p className="text-xs text-zinc-400 text-center font-medium">{locationName} — Menu / PDF</p>
+      <div style={{ borderRadius: 12, overflow: "hidden", background: "rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "16px 12px" }}>
+        <FileText style={{ width: 32, height: 32, color: "var(--mxj-faint)" }} />
+        <p style={{ fontSize: 11, color: "var(--mxj-muted)", textAlign: "center", fontWeight: 500, margin: 0 }}>{locationName} — Menu / PDF</p>
         <a
           href={mediaUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 transition-colors"
+          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#7ec8f0", textDecoration: "none", transition: "color 0.15s" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#6db8e0")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "#7ec8f0")}
         >
-          <ExternalLink className="w-3.5 h-3.5" />
+          <ExternalLink style={{ width: 14, height: 14, flexShrink: 0 }} />
           Open PDF
         </a>
         <iframe
           src={mediaUrl}
-          className="w-full h-40 rounded-lg mt-1"
+          style={{ width: "100%", height: 160, borderRadius: 8, marginTop: 8, border: "none" }}
           title={`${locationName} PDF`}
         />
       </div>
@@ -132,7 +134,7 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
       <img
         src={mediaUrl}
         alt={locationName}
-        className="w-full rounded-xl object-cover max-h-48 bg-black/30"
+        style={{ width: "100%", borderRadius: 12, objectFit: "cover", maxHeight: 192, background: "rgba(0,0,0,0.3)" }}
         loading="lazy"
       />
     );
@@ -144,11 +146,24 @@ export default function MediaMoodBoard({ mediaUrl, locationName }: Props) {
       href={mediaUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-2 text-xs text-sky-400 hover:text-sky-300 transition-colors
-                 bg-white/5 rounded-lg px-3 py-2 border border-white/8"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontSize: 11,
+        color: "#7ec8f0",
+        textDecoration: "none",
+        background: "rgba(255,255,255,0.05)",
+        borderRadius: 8,
+        padding: "8px 12px",
+        border: "1px solid rgba(255,255,255,0.08)",
+        transition: "color 0.15s"
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.color = "#6db8e0")}
+      onMouseLeave={(e) => (e.currentTarget.style.color = "#7ec8f0")}
     >
-      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-      <span className="truncate">{mediaUrl}</span>
+      <ExternalLink style={{ width: 14, height: 14, flexShrink: 0 }} />
+      <span style={{ textOverflow: "ellipsis", overflow: "hidden", maxWidth: "100%", whiteSpace: "nowrap" }}>{mediaUrl}</span>
     </a>
   );
 }

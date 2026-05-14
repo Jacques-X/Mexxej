@@ -55,6 +55,7 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   const [isRecording, setIsRecording] = useState(false);
   const [routeVisible, setRouteVisible] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [dayFilter, setDayFilter] = useState<number | "all">("all");
   const [addForm, setAddForm] = useState({
     name: "", latitude: "", longitude: "",
@@ -131,9 +132,16 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   };
 
   const handleDelete = async (id: string) => {
-    setLocations((prev) => prev.filter((l) => l.id !== id));
-    if (activeLocation?.id === id) setActiveLocation(null);
-    await deleteLocation(id);
+    const locationToDelete = locations.find((l) => l.id === id);
+    try {
+      await deleteLocation(id);
+      setLocations((prev) => prev.filter((l) => l.id !== id));
+      if (activeLocation?.id === id) setActiveLocation(null);
+      setDeleteError(null);
+    } catch (err) {
+      setDeleteError(`Failed to delete ${locationToDelete?.name || "location"}`);
+      setTimeout(() => setDeleteError(null), 3000);
+    }
   };
 
   const toggleRoute = async () => {
@@ -482,6 +490,7 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
             location={activeLocation}
             onClose={() => setActiveLocation(null)}
             onStreetView={(loc) => setStreetViewLocation(loc)}
+            onDelete={handleDelete}
           />
         </div>
       )}
@@ -535,6 +544,20 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
           <span style={{ fontSize: 13, fontWeight: 500, color: "#f6a0a0" }}>Recording Flyover…</span>
         </div>
       )}
+
+      {/* Error toast */}
+      {deleteError && (
+        <div className="mxj-glass" style={{
+          position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
+          zIndex: 50, borderRadius: 12, padding: "12px 20px",
+          display: "flex", alignItems: "center", gap: 8,
+          background: "rgba(224, 112, 112, 0.15)",
+          border: "1px solid rgba(224, 112, 112, 0.4)",
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: 3, background: "#e07070", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: "#e07070" }}>{deleteError}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -574,7 +597,7 @@ function IconCircle({
 
 // ── Add Pin panel ──
 function AddPinPanel({
-  form, onChange, onSubmit, onClose, days, isSubmitting,
+  form, onChange, onSubmit, onClose, days, isSubmitting, onPlaceSelectError,
 }: {
   form: Record<string, string>;
   onChange: (key: string, value: string) => void;
@@ -582,6 +605,7 @@ function AddPinPanel({
   onClose: () => void;
   days: number[];
   isSubmitting?: boolean;
+  onPlaceSelectError?: (error: string) => void;
 }) {
   const acContainerRef = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
@@ -603,12 +627,16 @@ function AddPinPanel({
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       el.addEventListener("gmp-placeselect", async (e: any) => {
-        const place = e.place;
-        await place.fetchFields({ fields: ["displayName", "location"] });
-        const name: string = place.displayName ?? "";
-        onChangeRef.current("name", name);
-        onChangeRef.current("latitude", place.location.lat().toString());
-        onChangeRef.current("longitude", place.location.lng().toString());
+        try {
+          const place = e.place;
+          await place.fetchFields({ fields: ["displayName", "location"] });
+          const name: string = place.displayName ?? "";
+          onChangeRef.current("name", name);
+          onChangeRef.current("latitude", place.location.lat().toString());
+          onChangeRef.current("longitude", place.location.lng().toString());
+        } catch (err) {
+          console.error("Failed to select place:", err);
+        }
       });
     }
 

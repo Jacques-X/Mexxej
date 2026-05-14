@@ -90,7 +90,7 @@ export default function TravelConcierge({ trip, locations, onSuggestion, onClose
           {/* Gradient avatar */}
           <div style={{
             width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
-            background: "linear-gradient(135deg, var(--mxj-accent) 0%, var(--mxj-accent-soft) 100%)",
+            background: "linear-gradient(135deg, #e88c64 0%, #d8a478 100%)",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 18,
           }}>
@@ -129,13 +129,13 @@ export default function TravelConcierge({ trip, locations, onSuggestion, onClose
                 padding: "10px 14px",
                 borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "4px 14px 14px 14px",
                 background: msg.role === "user"
-                  ? "rgba(232,140,100,0.18)"
+                  ? "rgba(232,140,100,0.15)"
                   : "rgba(246,239,228,0.06)",
                 border: "1px solid " + (msg.role === "user"
-                  ? "rgba(232,140,100,0.3)"
+                  ? "rgba(232,140,100,0.4)"
                   : "var(--mxj-stroke)"),
                 fontSize: 14, lineHeight: 1.55,
-                color: msg.role === "user" ? "#f6d0bb" : "var(--mxj-ink)",
+                color: msg.role === "user" ? "var(--mxj-ink)" : "var(--mxj-ink)",
               }}
             >
               <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{msg.content}</p>
@@ -148,9 +148,17 @@ export default function TravelConcierge({ trip, locations, onSuggestion, onClose
                     marginTop: 10, width: "100%", justifyContent: "flex-start",
                     padding: "8px 12px",
                     background: "rgba(136,168,192,0.12)",
-                    borderColor: "rgba(136,168,192,0.35)",
+                    borderColor: "rgba(136,168,192,0.4)",
                     color: "var(--mxj-cool)",
                     fontSize: 12,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(136,168,192,0.18)";
+                    e.currentTarget.style.borderColor = "rgba(136,168,192,0.5)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(136,168,192,0.12)";
+                    e.currentTarget.style.borderColor = "rgba(136,168,192,0.4)";
                   }}
                 >
                   <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -211,8 +219,14 @@ export default function TravelConcierge({ trip, locations, onSuggestion, onClose
             display: "flex", alignItems: "center", justifyContent: "center",
             cursor: loading || !input.trim() ? "default" : "pointer",
             opacity: loading || !input.trim() ? 0.4 : 1,
-            transition: "opacity 0.15s",
+            transition: "opacity 0.15s, background 0.15s",
             color: "#1a1208",
+          }}
+          onMouseEnter={(e) => {
+            if (!loading && input.trim()) e.currentTarget.style.background = "#f29c74";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "var(--mxj-accent)";
           }}
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">

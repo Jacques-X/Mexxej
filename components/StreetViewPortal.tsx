@@ -76,25 +76,49 @@ export default function StreetViewPortal({ location, onClose }: Props) {
   }, [onClose]);
 
   return (
-    <div className="absolute inset-0 z-50 bg-black animate-fade-in flex flex-col">
+    <div style={{ position: "absolute", inset: 0, zIndex: 50, background: "#000", animation: "fadeIn 0.25s ease-out", display: "flex", flexDirection: "column" }}>
       {/* Toolbar */}
-      <div className="absolute top-0 left-0 right-0 z-10 flex items-center gap-3 px-5 py-4
-                      bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
+        display: "flex", alignItems: "center", gap: 12, padding: "16px 20px",
+        background: "linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)",
+        pointerEvents: "none"
+      }}>
         <button
           onClick={onClose}
-          className="pointer-events-auto flex items-center gap-2 glass rounded-xl px-4 py-2
-                     text-sm font-semibold hover:bg-white/10 transition-colors"
+          style={{
+            pointerEvents: "auto",
+            display: "flex", alignItems: "center", gap: 8,
+            background: "rgba(20, 28, 38, 0.55)",
+            backdropFilter: "blur(24px)",
+            borderRadius: 12, padding: "8px 16px",
+            fontSize: 14, fontWeight: 600,
+            color: "var(--mxj-ink)",
+            border: "1px solid var(--mxj-stroke)",
+            cursor: "pointer",
+            transition: "background 0.15s"
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(20, 28, 38, 0.7)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(20, 28, 38, 0.55)")}
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft style={{ width: 16, height: 16 }} />
           Return to Sky
         </button>
-        <div className="pointer-events-auto glass rounded-xl px-4 py-2 text-sm text-zinc-300">
-          Street View — <span className="font-medium text-white">{location.name}</span>
+        <div style={{
+          pointerEvents: "auto",
+          background: "rgba(20, 28, 38, 0.55)",
+          backdropFilter: "blur(24px)",
+          borderRadius: 12, padding: "8px 16px",
+          fontSize: 14,
+          color: "rgba(246, 239, 228, 0.8)",
+          border: "1px solid var(--mxj-stroke)"
+        }}>
+          Street View — <span style={{ fontWeight: 500, color: "var(--mxj-ink)" }}>{location.name}</span>
         </div>
       </div>
 
       {/* Street View container */}
-      <div ref={panoRef} className="w-full h-full" />
+      <div ref={panoRef} style={{ width: "100%", height: "100%" }} />
 
       {/* No Street View fallback — rendered as an overlay if pano stays empty */}
       <NoSVFallback panoRef={panoRef} location={location} />
@@ -128,13 +152,17 @@ function NoSVFallback({
   return (
     <div
       ref={fallbackRef}
-      className="absolute inset-0 flex flex-col items-center justify-center
-                 opacity-0 pointer-events-none transition-opacity duration-500"
+      style={{
+        position: "absolute", inset: 0,
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        opacity: 0, pointerEvents: "none",
+        transition: "opacity 0.5s ease-out"
+      }}
     >
-      <AlertCircle className="w-10 h-10 text-zinc-600 mb-3" />
-      <p className="text-zinc-400 text-sm text-center max-w-xs">
+      <AlertCircle style={{ width: 40, height: 40, color: "var(--mxj-faint)", marginBottom: 12 }} />
+      <p style={{ color: "var(--mxj-muted)", fontSize: 14, textAlign: "center", maxWidth: 320, lineHeight: 1.55, margin: 0 }}>
         No Street View imagery available near{" "}
-        <span className="font-medium text-zinc-200">{location.name}</span>.
+        <span style={{ fontWeight: 500, color: "var(--mxj-ink)" }}>{location.name}</span>.
       </p>
     </div>
   );

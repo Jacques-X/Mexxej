@@ -41,7 +41,8 @@ export async function addLocation(
 }
 
 export async function deleteLocation(id: string): Promise<void> {
-  await supabase.from("trip_locations").delete().eq("id", id);
+  const { error } = await supabase.from("trip_locations").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteTrip(id: string): Promise<void> {
