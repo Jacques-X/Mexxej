@@ -371,6 +371,24 @@ gmp-map-3d {
   }
 }
 
+/* ── PlaceAutocompleteElement (new Places API web component) ── */
+.mxj-place-ac {
+  width: 100%;
+}
+.mxj-place-ac gmp-place-autocomplete,
+gmp-place-autocomplete {
+  display: block;
+  width: 100%;
+  --gmp-filled-input-border-radius: var(--mxj-r-md);
+  --gmp-filled-input-background-color: rgba(8, 12, 18, 0.5);
+  --gmp-filled-input-text-color: var(--mxj-ink);
+  --gmp-filled-input-placeholder-text-color: var(--mxj-faint);
+  --gmp-filled-input-border-color: var(--mxj-stroke);
+  --gmp-filled-input-focus-border-color: var(--mxj-accent);
+  font-family: var(--mxj-sans);
+  font-size: 14px;
+}
+
 /* ── Autocomplete dropdown (Google Places) ─────────────────── */
 .pac-container {
   background: var(--mxj-glass-strong) !important;

@@ -582,42 +582,46 @@ function AddPinPanel({
   days: number[];
   isSubmitting?: boolean;
 }) {
-  const searchRef = useRef<HTMLInputElement>(null);
+  const acContainerRef = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let ac: any = null;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     function attach() {
-      if (!searchRef.current) return;
-      ac = new google.maps.places.Autocomplete(searchRef.current, {
-        fields: ["name", "geometry"],
-      });
-      ac.addListener("place_changed", () => {
-        const place = ac.getPlace();
-        if (!place.geometry?.location) return;
-        const name: string = place.name ?? searchRef.current?.value ?? "";
+      const container = acContainerRef.current;
+      if (!container) return;
+      container.innerHTML = "";
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const el: any = new google.maps.places.PlaceAutocompleteElement();
+      container.appendChild(el);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      el.addEventListener("gmp-placeselect", async (e: any) => {
+        const place = e.place;
+        await place.fetchFields({ fields: ["displayName", "location"] });
+        const name: string = place.displayName ?? "";
         onChangeRef.current("name", name);
-        onChangeRef.current("latitude", place.geometry.location.lat().toString());
-        onChangeRef.current("longitude", place.geometry.location.lng().toString());
-        if (searchRef.current) searchRef.current.value = name;
+        onChangeRef.current("latitude", place.location.lat().toString());
+        onChangeRef.current("longitude", place.location.lng().toString());
       });
     }
 
-    if (typeof google !== "undefined" && google.maps?.places) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ready = () => (typeof google !== "undefined" && (google.maps?.places as any)?.PlaceAutocompleteElement);
+
+    if (ready()) {
       attach();
     } else {
       intervalId = setInterval(() => {
-        if (typeof google !== "undefined" && google.maps?.places) {
+        if (ready()) {
           clearInterval(intervalId!);
           intervalId = null;
           attach();
         }
       }, 100);
-      // Stop polling after 15 s if Maps API never loads
       setTimeout(() => {
         if (intervalId) { clearInterval(intervalId); intervalId = null; }
       }, 15_000);
@@ -625,7 +629,6 @@ function AddPinPanel({
 
     return () => {
       if (intervalId) clearInterval(intervalId);
-      if (ac && typeof google !== "undefined") google.maps.event.clearInstanceListeners(ac);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -676,21 +679,7 @@ function AddPinPanel({
           {/* Place search */}
           <div>
             <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Search place</span>
-            <input
-              ref={searchRef}
-              type="text"
-              defaultValue={form.name}
-              placeholder="Trevi Fountain, Rome…"
-              className="mxj-input"
-              onChange={(e) => {
-                if (!e.target.value) {
-                  onChangeRef.current("name", "");
-                  onChangeRef.current("latitude", "");
-                  onChangeRef.current("longitude", "");
-                }
-              }}
-              autoFocus
-            />
+            <div ref={acContainerRef} className="mxj-place-ac" />
             {coordsLabel && (
               <div style={{ marginTop: 6, fontSize: 11, color: "#7ec896", fontFamily: "var(--mxj-mono)", letterSpacing: "0.1em" }}>
                 ✓ {coordsLabel}
