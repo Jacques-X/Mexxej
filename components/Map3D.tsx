@@ -199,7 +199,12 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
           viewer.scene.globe.show = false; // hide flat globe; tiles take over
         })
         .catch(() => {
-          // Google 3D tiles unavailable — Bing satellite fallback stays active
+          // Google 3D tiles blocked (EEA restriction) — fall back to OSM Buildings
+          Cesium.createOsmBuildingsAsync()
+            .then((osmTileset: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+              viewer.scene.primitives.add(osmTileset);
+            })
+            .catch(() => { /* Ion token missing or no network — Bing-only fallback */ });
         });
     }
 
