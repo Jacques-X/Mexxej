@@ -48,17 +48,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   other:      "#9aa4b0",
 };
 
-function makePinSvg(color: string, letter: string): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="48" viewBox="0 0 36 48">
-    <filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".4"/></filter>
-    <path d="M18 0C8.06 0 0 8.06 0 18c0 13.5 18 30 18 30S36 31.5 36 18C36 8.06 27.94 0 18 0z"
-          fill="${color}" filter="url(#s)"/>
-    <circle cx="18" cy="18" r="10" fill="white" opacity=".9"/>
-    <text x="18" y="23" font-family="sans-serif" font-size="12" font-weight="bold"
-          fill="${color}" text-anchor="middle">${letter}</text>
-  </svg>`;
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
-}
 
 // ─── CameraPosition → Cesium HeadingPitchRange ────────────────
 // Our tilt: 0 = nadir (straight down), 90 = horizontal
@@ -81,7 +70,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const viewerRef        = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const markerMapRef     = useRef<Map<string, any>>(new Map());
+  const markerMapRef     = useRef<Map<string, any[]>>(new Map());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const routeEntityRef   = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,27 +84,66 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
   // ── Marker management ──────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function addMarker(viewer: any, loc: TripLocation) {
+  async function addMarker(viewer: any, loc: TripLocation) {
     if (markerMapRef.current.has(loc.id)) return;
-    const C      = Cesium;
-    const color  = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
-    const letter = loc.name.charAt(0).toUpperCase();
+    const C     = Cesium;
+    const color = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
+    const mat   = C.Color.fromCssColorString(color);
 
-    const entity = viewer.entities.add({
+    // Sample exact surface height from the photorealistic tile mesh so the
+    // cone base sits flush with the ground rather than floating or clipping.
+    let groundHeight = 0;
+    try {
+      const carto    = C.Cartographic.fromDegrees(loc.longitude, loc.latitude);
+      const [result] = await viewer.scene.sampleHeightMostDetailed([carto]);
+      if (result?.height != null) groundHeight = result.height;
+    } catch { /* tiles not loaded yet — base placed at ellipsoid surface */ }
+
+    const STEM_H = 42;  // metres tall
+    const HEAD_R = 13;  // sphere radius in metres
+    const stemMid = groundHeight + STEM_H / 2;
+    const headAlt = groundHeight + STEM_H + HEAD_R;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const entities: any[] = [];
+
+    // Cone: wide at top (meets sphere), tapers to a point at the ground
+    entities.push(viewer.entities.add({
+      position: C.Cartesian3.fromDegrees(loc.longitude, loc.latitude, stemMid),
+      cylinder: {
+        length:       STEM_H,
+        topRadius:    5,
+        bottomRadius: 0,
+        material:     mat.withAlpha(0.92),
+        outline:      false,
+      },
+    }));
+
+    // Sphere head + letter label (label always on top via disableDepthTestDistance)
+    entities.push(viewer.entities.add({
       id:       loc.id,
-      position: C.Cartesian3.fromDegrees(loc.longitude, loc.latitude),
-      billboard: {
-        image:                    makePinSvg(color, letter),
-        width:                    36,
-        height:                   48,
-        verticalOrigin:           C.VerticalOrigin.BOTTOM,
-        // CLAMP_TO_3D_TILE snaps the pin onto the photorealistic tile mesh
-        // (CLAMP_TO_GROUND won't work when globe.show = false)
-        heightReference:          C.HeightReference.CLAMP_TO_3D_TILE,
+      position: C.Cartesian3.fromDegrees(loc.longitude, loc.latitude, headAlt),
+      ellipsoid: {
+        radii:        new C.Cartesian3(HEAD_R, HEAD_R, HEAD_R),
+        material:     mat,
+        outline:      true,
+        outlineColor: C.Color.WHITE.withAlpha(0.35),
+        outlineWidth: 1,
+      },
+      label: {
+        text:                    loc.name.charAt(0).toUpperCase(),
+        font:                    "bold 13px sans-serif",
+        fillColor:               C.Color.WHITE,
+        style:                   C.LabelStyle.FILL_AND_OUTLINE,
+        outlineWidth:            2,
+        outlineColor:            C.Color.BLACK.withAlpha(0.6),
+        verticalOrigin:          C.VerticalOrigin.CENTER,
+        horizontalOrigin:        C.HorizontalOrigin.CENTER,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
-    });
-    markerMapRef.current.set(loc.id, entity);
+    }));
+
+    markerMapRef.current.set(loc.id, entities);
   }
 
   // ── Geocode via Google Maps (loaded for Places API anyway) ─
@@ -256,9 +284,9 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     if (!viewer || typeof Cesium === "undefined") return;
 
     const incoming = new Set(locations.map((l) => l.id));
-    markerMapRef.current.forEach((entity, locId) => {
+    markerMapRef.current.forEach((entities, locId) => {
       if (!incoming.has(locId)) {
-        viewer.entities.remove(entity);
+        entities.forEach((e) => viewer.entities.remove(e));
         markerMapRef.current.delete(locId);
       }
     });
