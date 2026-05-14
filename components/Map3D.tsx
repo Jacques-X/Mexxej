@@ -1,8 +1,7 @@
 "use client";
 
-// Map — Google Maps JS API, hybrid satellite/labels (2D).
-// Switched from CesiumJS 3D after EEA blocked tile.googleapis.com
-// at both direct and proxied routes. Maps JS API 2D has no such restriction.
+// Map — Google Maps JS API, hybrid satellite (2D).
+// Uses &callback= instead of script.onload — required for loading=async.
 
 import {
   useEffect,
@@ -44,7 +43,6 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 function rangeToZoom(range: number): number {
-  // range 50 → zoom 21, range 100 → zoom 20, range 1000 → zoom 17, range 10000 → zoom 14
   return Math.max(1, Math.min(21, Math.round(21 - Math.log2(range / 50))));
 }
 
@@ -75,19 +73,8 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
   const onMarkerClickRef  = useRef(onMarkerClick);
   onMarkerClickRef.current = onMarkerClick;
 
-  function waitForGoogle(timeoutMs = 10_000): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (typeof google !== "undefined") return resolve();
-      const id = setInterval(() => {
-        if (typeof google !== "undefined") { clearInterval(id); resolve(); }
-      }, 100);
-      setTimeout(() => { clearInterval(id); reject(new Error("Google Maps SDK timed out")); }, timeoutMs);
-    });
-  }
-
   async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
     try {
-      await waitForGoogle();
       const geocoder = new google.maps.Geocoder();
       const result   = await geocoder.geocode({ address });
       if (result.results[0]) {
@@ -104,13 +91,15 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     const color  = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
     const letter = loc.name.charAt(0).toUpperCase();
 
-    const content = document.createElement("div");
-    content.innerHTML = `<img src="${makePinSvg(color, letter)}" width="36" height="48" style="cursor:pointer;display:block;" />`;
-
-    const marker = new google.maps.marker.AdvancedMarkerElement({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const marker = new (google.maps as any).Marker({
       map,
       position: { lat: loc.latitude, lng: loc.longitude },
-      content,
+      icon: {
+        url:        makePinSvg(color, letter),
+        scaledSize: new google.maps.Size(36, 48),
+        anchor:     new google.maps.Point(18, 48),
+      },
       title: loc.name,
     });
 
@@ -120,8 +109,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
   const initMap = useCallback(async () => {
     if (mapRef.current || !containerRef.current) return;
-    await waitForGoogle();
-    await google.maps.importLibrary("marker");
 
     let center = initialCenter;
     if (!center && destination) {
@@ -131,31 +118,32 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
     const map = new google.maps.Map(containerRef.current, {
       center,
-      zoom: 13,
+      zoom: 14,
       mapTypeId: "hybrid",
-      mapId: "DEMO_MAP_ID",
       disableDefaultUI: true,
       gestureHandling: "greedy",
+      tilt: 0,
     });
 
     mapRef.current = map;
 
-    // Zoom in after load
     setTimeout(() => map.setZoom(17), 800);
 
     locationsRef.current.forEach((loc) => addMarker(map, loc));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCenter, destination]);
 
-  // ── Load Maps JS API ─────────────────────────────────────
+  // ── Load Maps JS API via callback (required for loading=async) ───
   useEffect(() => {
     if (mapsReadyRef.current) return;
     mapsReadyRef.current = true;
+
+    // Expose callback globally so Maps JS can invoke it when ready
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mxjMapsReady = () => initMap();
+
     const script = document.createElement("script");
-    script.src   = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,marker&loading=async`;
-    script.async = true;
-    script.onload  = () => initMap();
-    script.onerror = () => { mapsReadyRef.current = false; };
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async&callback=__mxjMapsReady`;
     document.head.appendChild(script);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -166,7 +154,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     if (!map) return;
     const incoming = new Set(locations.map((l) => l.id));
     markerMapRef.current.forEach((marker, locId) => {
-      if (!incoming.has(locId)) { marker.map = null; markerMapRef.current.delete(locId); }
+      if (!incoming.has(locId)) { marker.setMap(null); markerMapRef.current.delete(locId); }
     });
     locations.forEach((loc) => addMarker(map, loc));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,14 +169,13 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       map.setZoom(rangeToZoom(position.range));
     },
 
-    flyCameraAround(position, _durationMs = 10000, _rounds = 1) {
-      // 2D has no orbit — pan to centre
+    flyCameraAround(position) {
       const map = mapRef.current;
       if (!map) return;
       map.panTo({ lat: position.center.lat, lng: position.center.lng });
     },
 
-    stopCamera() { /* Google Maps pans are instant — nothing to cancel */ },
+    stopCamera() { /* pans are instant */ },
 
     waitForAnimationEnd() {
       return new Promise<void>((resolve) => {
@@ -205,7 +192,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     async drawRoute(locs) {
       const map = mapRef.current;
       if (!map || locs.length < 2) return;
-      if (typeof google === "undefined") return;
 
       routeRendererRef.current?.setMap(null);
       routeRendererRef.current = null;
@@ -230,11 +216,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       const renderer = new google.maps.DirectionsRenderer({
         map,
         suppressMarkers: true,
-        polylineOptions: {
-          strokeColor:   "#38bdf8",
-          strokeWeight:  6,
-          strokeOpacity: 0.85,
-        },
+        polylineOptions: { strokeColor: "#38bdf8", strokeWeight: 6, strokeOpacity: 0.85 },
       });
       renderer.setDirections(result);
       routeRendererRef.current = renderer;
@@ -252,7 +234,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
   useEffect(() => {
     return () => {
-      markerMapRef.current.forEach((m) => { m.map = null; });
+      markerMapRef.current.forEach((m) => m.setMap(null));
       routeRendererRef.current?.setMap(null);
     };
   }, []);
