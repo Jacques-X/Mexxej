@@ -155,10 +155,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
     const ionToken = process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN;
 
-    // Try Google Photorealistic 3D Tiles first; fall back to
-    // Cesium Ion (Bing satellite + World Terrain) if unavailable.
-    const useGoogleTiles = !!(apiKey) && !!ionToken === false;
-
     if (ionToken) {
       Cesium.Ion.defaultAccessToken = ionToken;
     } else {
@@ -177,14 +173,11 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       infoBox: false,
       selectionIndicator: false,
       requestRenderMode: false,
+      imageryProvider: false, // no Bing — Google 3D tiles take over
     };
 
-    // With Ion token: use Bing satellite + World Terrain (works globally)
     if (ionToken) {
       viewerOptions.terrain = Cesium.Terrain.fromWorldTerrain();
-      // Default imagery is Bing Aerial — real satellite, no extra config needed
-    } else {
-      viewerOptions.imageryProvider = false;
     }
 
     const viewer = new Cesium.Viewer(containerRef.current, viewerOptions);
