@@ -35,14 +35,19 @@ export async function GET(
 
   const contentType = upstream.headers.get("Content-Type") ?? "application/octet-stream";
 
-  // JSON responses (root.json, tileset.json) may contain absolute tile.googleapis.com
-  // URLs. Rewrite them so Cesium always routes through this proxy.
+  // JSON responses (root.json, tileset.json) may contain tile URLs that need
+  // rewriting so Cesium always routes through this proxy.
+  // Google uses two forms:
+  //   • Absolute: https://tile.googleapis.com/v1/3dtiles/…
+  //   • Root-relative: /v1/3dtiles/… (resolved by Cesium against the app origin)
+  // Both must become /api/tiles/… or the browser hits a 404 on the app itself.
   if (contentType.includes("json")) {
     let text = await upstream.text();
     text = text.replace(
       /https:\/\/tile\.googleapis\.com\/v1\/3dtiles\//g,
       "/api/tiles/"
     );
+    text = text.replace(/\/v1\/3dtiles\//g, "/api/tiles/");
     return new NextResponse(text, {
       status: 200,
       headers: {
