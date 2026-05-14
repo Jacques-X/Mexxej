@@ -290,11 +290,24 @@ body {
   }
 }
 
-/* ── Google Maps 3D element ────────────────────────────────── */
-gmp-map-3d {
-  display: block;
-  width: 100%;
-  height: 100%;
+/* ── Cesium — hide all default toolbar UI, we use our own ── */
+.cesium-viewer-toolbar,
+.cesium-viewer-animationContainer,
+.cesium-viewer-timelineContainer,
+.cesium-viewer-fullscreenContainer,
+.cesium-viewer-bottom,
+.cesium-performanceDisplay,
+.cesium-navigationHelpButton,
+.cesium-viewer-navigationHelpButton,
+.cesium-navigation-help,
+.cesium-viewer-geocoderContainer {
+  display: none !important;
+}
+.cesium-widget,
+.cesium-widget canvas {
+  width: 100% !important;
+  height: 100% !important;
+  outline: none;
 }
 
 /* ── Scrollbars ────────────────────────────────────────────── */
