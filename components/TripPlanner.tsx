@@ -639,13 +639,12 @@ function AddPinPanel({
     <div
       style={{
         position: "absolute", inset: 0, zIndex: 40,
-        display: "flex", alignItems: "flex-end",
         justifyContent: "center",
         background: "rgba(0,0,0,0.55)",
         backdropFilter: "blur(4px)",
         WebkitBackdropFilter: "blur(4px)",
       }}
-      className="animate-fade-in md:items-center"
+      className="animate-fade-in flex items-end md:items-center"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
