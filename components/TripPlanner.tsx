@@ -472,25 +472,37 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
       {/* ── Overlays ── */}
 
       {activeLocation && (
-        <InfoCard
-          location={activeLocation}
-          onClose={() => setActiveLocation(null)}
-          onStreetView={(loc) => setStreetViewLocation(loc)}
-        />
+        <div
+          className="md:flex md:items-center md:justify-center"
+          style={{ position: "absolute", inset: 0, zIndex: 30 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setActiveLocation(null); }}
+        >
+          <InfoCard
+            location={activeLocation}
+            onClose={() => setActiveLocation(null)}
+            onStreetView={(loc) => setStreetViewLocation(loc)}
+          />
+        </div>
       )}
 
       {showConcierge && (
-        <TravelConcierge
-          trip={trip}
-          locations={locations}
-          onSuggestion={(suggestion) => {
-            mapRef.current?.flyCameraTo({
-              center: { lat: suggestion.latitude, lng: suggestion.longitude, altitude: 200 },
-              tilt: 65, heading: 0, range: 1000,
-            });
-          }}
-          onClose={() => setShowConcierge(false)}
-        />
+        <div
+          className="md:flex md:items-center md:justify-center"
+          style={{ position: "absolute", inset: 0, zIndex: 30 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowConcierge(false); }}
+        >
+          <TravelConcierge
+            trip={trip}
+            locations={locations}
+            onSuggestion={(suggestion) => {
+              mapRef.current?.flyCameraTo({
+                center: { lat: suggestion.latitude, lng: suggestion.longitude, altitude: 200 },
+                tilt: 65, heading: 0, range: 1000,
+              });
+            }}
+            onClose={() => setShowConcierge(false)}
+          />
+        </div>
       )}
 
       {showAddPanel && (

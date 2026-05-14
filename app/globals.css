@@ -317,7 +317,7 @@ gmp-map-3d {
 .animate-fade-in  { animation: fadeIn  0.25s ease-out; }
 .animate-slide-up { animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 
-/* ── Concierge panel — mobile full-screen, desktop centred modal ─── */
+/* ── Concierge panel — mobile full-screen, desktop flows in flex overlay ─── */
 .mxj-concierge-panel {
   position: absolute;
   z-index: 30;
@@ -327,17 +327,15 @@ gmp-map-3d {
 }
 @media (min-width: 768px) {
   .mxj-concierge-panel {
+    position: relative;
     inset: auto;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
     width: 420px;
     height: 560px;
     border-radius: 18px;
   }
 }
 
-/* ── Info card — mobile anchored bottom, desktop centred modal ──── */
+/* ── Info card — mobile bottom sheet, desktop flows in flex overlay ──── */
 .mxj-info-card {
   position: absolute;
   z-index: 30;
@@ -351,9 +349,8 @@ gmp-map-3d {
 }
 @media (min-width: 768px) {
   .mxj-info-card {
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    position: relative;
+    left: auto;
     right: auto;
     bottom: auto;
     width: 440px;
