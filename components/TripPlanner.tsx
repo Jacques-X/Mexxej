@@ -332,15 +332,13 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         </div>
 
         {/* Right pill: share */}
-        <div className="mxj-glass" style={{ borderRadius: 999, padding: "6px 8px 6px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-          <button
-            className="mxj-btn"
-            style={{ padding: "7px 12px" }}
-            onClick={handleShare}
-          >
-            {Ico.share}<span>Share</span>
-          </button>
-        </div>
+        <button
+          className="mxj-glass mxj-btn"
+          style={{ borderRadius: 999, padding: "9px 16px", flexShrink: 0 }}
+          onClick={handleShare}
+        >
+          {Ico.share}<span>Share</span>
+        </button>
       </div>
 
       {/* Desktop itinerary sidebar */}
