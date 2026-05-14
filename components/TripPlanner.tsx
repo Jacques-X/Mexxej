@@ -131,8 +131,9 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   };
 
   const handleDelete = async (id: string) => {
-    await deleteLocation(id);
+    setLocations((prev) => prev.filter((l) => l.id !== id));
     if (activeLocation?.id === id) setActiveLocation(null);
+    await deleteLocation(id);
   };
 
   const toggleRoute = async () => {
@@ -595,7 +596,9 @@ function AddPinPanel({
       container.innerHTML = "";
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const el: any = new google.maps.places.PlaceAutocompleteElement();
+      const PAE = (google.maps.places as any).PlaceAutocompleteElement;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const el: any = new PAE();
       container.appendChild(el);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
