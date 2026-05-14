@@ -639,17 +639,16 @@ function AddPinPanel({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="mxj-glass-strong"
+        className="mxj-glass-strong mxj-sheet-modal"
         style={{
           width: "100%", maxWidth: 420,
-          borderRadius: "24px 24px 0 0",
           maxHeight: "90vh",
           overflowY: "auto",
           display: "flex", flexDirection: "column",
         }}
       >
         {/* Handle */}
-        <div style={{ padding: "8px 0", display: "flex", justifyContent: "center", flexShrink: 0 }}>
+        <div className="md:hidden" style={{ padding: "8px 0", display: "flex", justifyContent: "center", flexShrink: 0 }}>
           <div style={{ width: 38, height: 4, borderRadius: 2, background: "var(--mxj-stroke-strong)" }} />
         </div>
 
