@@ -138,9 +138,6 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
     const C = Cesium;
 
-    // Don't attempt Cesium Ion authentication — we use Google tiles directly
-    C.Ion.defaultAccessToken = "";
-
     // Hidden div for Cesium credit display (required by ToS but we hide it)
     const creditEl = document.createElement("div");
     creditEl.style.display = "none";
@@ -158,6 +155,9 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
       infoBox:               false,
       selectionIndicator:    false,
       creditContainer:       creditEl,
+      // Prevent Cesium from making Ion requests — we use Google tiles only
+      terrainProvider:       new C.EllipsoidTerrainProvider(),
+      baseLayer:             false,
     });
     viewerRef.current = viewer;
 
