@@ -1,8 +1,8 @@
 "use client";
 
-// Map3D — Google Maps 3D (gmp-map-3d web component via Maps JS API v=alpha)
-// Uses Maps JavaScript API, not the Map Tiles API, so avoids the EEA restriction
-// on direct tile access. Camera API mirrors our CameraPosition type natively.
+// Map3D — CesiumJS + Google Photorealistic 3D Tiles via server-side proxy.
+// Direct tile.googleapis.com requests are blocked in the EEA; this routes
+// them through /api/tiles (forced to a US Vercel region) to bypass that.
 
 import {
   useEffect,
@@ -13,8 +13,8 @@ import {
 } from "react";
 import type { TripLocation, CameraPosition } from "@/types/trip";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-declare const google: any;
+// Cesium is loaded from CDN at runtime — declare as any
+declare const Cesium: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 // ─── Public API exposed via ref ───────────────────────────────
 export interface Map3DHandle {
@@ -24,7 +24,7 @@ export interface Map3DHandle {
   waitForAnimationEnd: () => Promise<void>;
   drawRoute: (locations: TripLocation[]) => Promise<void>;
   clearRoute: () => void;
-  getMapElement: () => HTMLElement | null;
+  getMapElement: () => null;
 }
 
 interface Props {
@@ -55,13 +55,19 @@ function makePinSvg(color: string, letter: string): string {
   return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 
-// CameraPosition → gmp-map-3d camera object (1:1 mapping, no conversion needed)
-function toCameraView(pos: CameraPosition) {
+function cesiumCamera(pos: CameraPosition) {
+  const altOffset = pos.range * Math.cos((pos.tilt * Math.PI) / 180);
   return {
-    center: { lat: pos.center.lat, lng: pos.center.lng, altitude: pos.center.altitude ?? 0 },
-    tilt: pos.tilt,
-    heading: pos.heading,
-    range: pos.range,
+    destination: Cesium.Cartesian3.fromDegrees(
+      pos.center.lng,
+      pos.center.lat,
+      (pos.center.altitude ?? 0) + altOffset
+    ),
+    orientation: {
+      heading: Cesium.Math.toRadians(pos.heading),
+      pitch:   Cesium.Math.toRadians(pos.tilt - 90),
+      roll:    0,
+    },
   };
 }
 
@@ -71,32 +77,60 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
   ref
 ) {
   const containerRef      = useRef<HTMLDivElement>(null);
-  const mapRef            = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
-  const markerMapRef      = useRef<Map<string, any>>(new Map()); // eslint-disable-line @typescript-eslint/no-explicit-any
-  const routePolylineRef  = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const viewerRef         = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const entityMapRef      = useRef<Map<string, string>>(new Map());
+  const routeEntityIdRef  = useRef<string | null>(null);
+  const cesiumReadyRef    = useRef(false);
   const mapsReadyRef      = useRef(false);
-  const locationsRef      = useRef(locations);
-  locationsRef.current    = locations;
-  const onMarkerClickRef  = useRef(onMarkerClick);
-  onMarkerClickRef.current = onMarkerClick;
 
-  // ── Wait for Maps JS SDK ─────────────────────────────────
-  function waitForGoogle(timeoutMs = 10_000): Promise<void> {
+  // ── Load Cesium from CDN ─────────────────────────────────
+  useEffect(() => {
+    if (cesiumReadyRef.current) return;
+    cesiumReadyRef.current = true;
+
+    const CESIUM_VERSION = "1.121";
+    const CESIUM_BASE = `https://cesium.com/downloads/cesiumjs/releases/${CESIUM_VERSION}/Build/Cesium/`;
+    (window as any).CESIUM_BASE_URL = CESIUM_BASE; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    const link = document.createElement("link");
+    link.rel   = "stylesheet";
+    link.href  = `${CESIUM_BASE}Widgets/widgets.css`;
+    document.head.appendChild(link);
+
+    const script = document.createElement("script");
+    script.src   = `${CESIUM_BASE}Cesium.js`;
+    script.async = true;
+    script.onload  = () => initCesium();
+    script.onerror = () => { cesiumReadyRef.current = false; };
+    document.head.appendChild(script);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Load Google Maps (Directions + StreetView) ───────────
+  useEffect(() => {
+    if (mapsReadyRef.current) return;
+    mapsReadyRef.current = true;
+    const script = document.createElement("script");
+    script.src   = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+    script.async = true;
+    document.head.appendChild(script);
+  }, [apiKey]);
+
+  function waitForGoogleMaps(timeoutMs = 10_000): Promise<void> {
     return new Promise((resolve, reject) => {
       if (typeof google !== "undefined") return resolve();
       const id = setInterval(() => {
         if (typeof google !== "undefined") { clearInterval(id); resolve(); }
       }, 100);
-      setTimeout(() => { clearInterval(id); reject(new Error("Google Maps SDK timed out")); }, timeoutMs);
+      setTimeout(() => { clearInterval(id); reject(new Error("Google Maps SDK failed to load")); }, timeoutMs);
     });
   }
 
-  // ── Geocode a place name ─────────────────────────────────
   async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
     try {
-      await waitForGoogle();
+      await waitForGoogleMaps();
       const geocoder = new google.maps.Geocoder();
-      const result = await geocoder.geocode({ address });
+      const result   = await geocoder.geocode({ address });
       if (result.results[0]) {
         const loc = result.results[0].geometry.location;
         return { lat: loc.lat(), lng: loc.lng() };
@@ -105,137 +139,194 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     return null;
   }
 
-  // ── Add a single marker to the map ──────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function addMarker(map: any, loc: TripLocation) {
-    if (markerMapRef.current.has(loc.id)) return;
-    const Marker3DInteractive = google.maps?.maps3d?.Marker3DInteractiveElement;
-    if (!Marker3DInteractive) return;
+  // ── Initialise Cesium viewer ─────────────────────────────
+  const initCesium = useCallback(async () => {
+    if (!containerRef.current || viewerRef.current) return;
 
-    const color  = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
-    const letter = loc.name.charAt(0).toUpperCase();
+    const ionToken = process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN;
+    if (ionToken) {
+      Cesium.Ion.defaultAccessToken = ionToken;
+    } else {
+      Cesium.Ion.defaultAccessToken = "";
+    }
 
-    const marker = new Marker3DInteractive({
-      position: { lat: loc.latitude, lng: loc.longitude, altitude: 0 },
-      altitudeMode: "CLAMP_TO_GROUND",
-    });
+    const viewerOptions: any = { // eslint-disable-line @typescript-eslint/no-explicit-any
+      timeline:             false,
+      animation:            false,
+      baseLayerPicker:      false,
+      geocoder:             false,
+      homeButton:           false,
+      sceneModePicker:      false,
+      navigationHelpButton: false,
+      fullscreenButton:     false,
+      infoBox:              false,
+      selectionIndicator:   false,
+      requestRenderMode:    false,
+      imageryProvider:      false, // no Bing — 3D tiles take over
+    };
 
-    const img = document.createElement("img");
-    img.src    = makePinSvg(color, letter);
-    img.width  = 36;
-    img.height = 48;
-    img.style.cursor = "pointer";
-    marker.appendChild(img);
+    if (ionToken) {
+      viewerOptions.terrain = Cesium.Terrain.fromWorldTerrain();
+    }
 
-    marker.addEventListener("gmp-click", () => onMarkerClickRef.current(loc));
+    const viewer = new Cesium.Viewer(containerRef.current, viewerOptions);
+    viewer.scene.globe.depthTestAgainstTerrain = true;
 
-    map.appendChild(marker);
-    markerMapRef.current.set(loc.id, marker);
-  }
+    // Load Google Photorealistic 3D Tiles through our server-side proxy.
+    // The proxy runs in a US Vercel region, bypassing the EEA block.
+    Cesium.Cesium3DTileset.fromUrl("/api/tiles/root.json")
+      .then((tileset: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        viewer.scene.primitives.add(tileset);
+        viewer.scene.globe.show = false;
+      })
+      .catch(() => {
+        // Proxy also unreachable — fall back to OSM Buildings
+        Cesium.createOsmBuildingsAsync()
+          .then((osm: any) => { viewer.scene.primitives.add(osm); }) // eslint-disable-line @typescript-eslint/no-explicit-any
+          .catch(() => {});
+      });
 
-  // ── Initialise gmp-map-3d ────────────────────────────────
-  const initMap = useCallback(async () => {
-    if (mapRef.current || !containerRef.current) return;
-    await waitForGoogle();
-    await google.maps.importLibrary("maps3d");
-
+    // Resolve starting position
     let center = initialCenter;
     if (!center && destination) {
       center = (await geocode(destination)) ?? undefined;
     }
     center ??= { lat: 41.9028, lng: 12.4964 };
 
-    const map = document.createElement("gmp-map-3d") as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-    map.center  = { lat: center.lat, lng: center.lng, altitude: 0 };
-    map.tilt    = 45;
-    map.heading = 0;
-    map.range   = 8_000;
-    map.style.cssText = "width:100%;height:100%;display:block;";
+    viewer.camera.setView({
+      destination:  Cesium.Cartesian3.fromDegrees(center.lng, center.lat, 8_000),
+      orientation:  { heading: 0, pitch: Cesium.Math.toRadians(-45), roll: 0 },
+    });
 
-    containerRef.current.appendChild(map);
-    mapRef.current = map;
-
-    // Cinematic swoop
     setTimeout(() => {
-      map.flyCameraTo({
-        endCamera: { center: { lat: center!.lat, lng: center!.lng, altitude: 0 }, tilt: 67.5, heading: 0, range: 600 },
-        durationMilliseconds: 3500,
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(center!.lng, center!.lat, 600),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-25), roll: 0 },
+        duration:    3.5,
       });
     }, 600);
 
-    // Sync any pins that arrived before the map was ready
-    locationsRef.current.forEach((loc) => addMarker(map, loc));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCenter, destination]);
+    // Click handler
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction((event: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      const picked = viewer.scene.pick(event.position);
+      if (Cesium.defined(picked?.id?.id)) {
+        const locId: string = picked.id.id;
+        containerRef.current?.dispatchEvent(
+          new CustomEvent("cesium-marker-click", { detail: locId, bubbles: true })
+        );
+      }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-  // ── Load Maps JS API (alpha channel for maps3d) ──────────
-  useEffect(() => {
-    if (mapsReadyRef.current) return;
-    mapsReadyRef.current = true;
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=alpha&libraries=maps3d,places&loading=async`;
-    script.async = true;
-    script.onload  = () => initMap();
-    script.onerror = () => { mapsReadyRef.current = false; };
-    document.head.appendChild(script);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    viewerRef.current = viewer;
+  }, [apiKey, initialCenter, destination]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sync markers whenever locations change ────────────────
+  // ── Marker click listener ────────────────────────────────
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: Event) => {
+      const locId = (e as CustomEvent).detail as string;
+      const loc   = locations.find((l) => l.id === locId);
+      if (loc) onMarkerClick(loc);
+    };
+    el.addEventListener("cesium-marker-click", handler);
+    return () => el.removeEventListener("cesium-marker-click", handler);
+  }, [locations, onMarkerClick]);
+
+  // ── Sync markers ─────────────────────────────────────────
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
 
     const incoming = new Set(locations.map((l) => l.id));
-    markerMapRef.current.forEach((marker, locId) => {
-      if (!incoming.has(locId)) { marker.remove(); markerMapRef.current.delete(locId); }
+
+    entityMapRef.current.forEach((cesiumId, locId) => {
+      if (!incoming.has(locId)) {
+        viewer.entities.removeById(cesiumId);
+        entityMapRef.current.delete(locId);
+      }
     });
-    locations.forEach((loc) => addMarker(map, loc));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    locations.forEach((loc) => {
+      if (entityMapRef.current.has(loc.id)) return;
+      const color  = CATEGORY_COLORS[loc.category] ?? CATEGORY_COLORS.other;
+      const letter = loc.name.charAt(0).toUpperCase();
+
+      const entity = viewer.entities.add({
+        id:       loc.id,
+        position: Cesium.Cartesian3.fromDegrees(loc.longitude, loc.latitude, 0),
+        billboard: {
+          image:                    makePinSvg(color, letter),
+          verticalOrigin:           Cesium.VerticalOrigin.BOTTOM,
+          heightReference:          Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          width: 36, height: 48,
+        },
+        label: {
+          text:                     loc.name,
+          font:                     "bold 12px sans-serif",
+          fillColor:                Cesium.Color.WHITE,
+          outlineColor:             Cesium.Color.BLACK,
+          outlineWidth:             2,
+          style:                    Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin:           Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset:              new Cesium.Cartesian2(0, -52),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          heightReference:          Cesium.HeightReference.CLAMP_TO_GROUND,
+        },
+      });
+
+      entityMapRef.current.set(loc.id, entity.id as string);
+    });
   }, [locations]);
 
   // ── Imperative handle ────────────────────────────────────
   useImperativeHandle(ref, () => ({
     flyCameraTo(position, durationMs = 3000) {
-      mapRef.current?.flyCameraTo({
-        endCamera: toCameraView(position),
-        durationMilliseconds: durationMs,
-      });
+      const viewer = viewerRef.current;
+      if (!viewer) return;
+      viewer.camera.flyTo({ ...cesiumCamera(position), duration: durationMs / 1000 });
     },
 
     flyCameraAround(position, durationMs = 10000, rounds = 1) {
-      mapRef.current?.flyCameraAround({
-        camera: toCameraView(position),
-        durationMilliseconds: durationMs,
-        rounds,
+      const viewer = viewerRef.current;
+      if (!viewer) return;
+      const cam = cesiumCamera(position);
+      viewer.camera.flyTo({
+        ...cam,
+        orientation: {
+          ...cam.orientation,
+          heading: Cesium.Math.toRadians(position.heading + 360 * rounds),
+        },
+        duration: durationMs / 1000,
       });
     },
 
     stopCamera() {
-      mapRef.current?.stopCameraAnimation();
+      viewerRef.current?.camera.cancelFlight();
     },
 
     waitForAnimationEnd() {
       return new Promise<void>((resolve) => {
-        const map = mapRef.current;
-        if (!map) return resolve();
+        const viewer = viewerRef.current;
+        if (!viewer) return resolve();
         const timeout = setTimeout(resolve, 8_000);
-        const handler = () => {
-          clearTimeout(timeout);
-          map.removeEventListener("gmp-animationend", handler);
-          resolve();
-        };
-        map.addEventListener("gmp-animationend", handler);
+        const remove  = viewer.camera.moveEnd.addEventListener(() => {
+          clearTimeout(timeout); remove(); resolve();
+        });
       });
     },
 
     async drawRoute(locs) {
-      const map = mapRef.current;
-      if (!map || locs.length < 2) return;
+      const viewer = viewerRef.current;
+      if (!viewer || locs.length < 2) return;
       if (typeof google === "undefined") return;
 
-      routePolylineRef.current?.remove();
-      routePolylineRef.current = null;
+      if (routeEntityIdRef.current) {
+        viewer.entities.removeById(routeEntityIdRef.current);
+        routeEntityIdRef.current = null;
+      }
 
       const directionsService = new google.maps.DirectionsService();
       const waypoints = locs.slice(1, -1).map((l) => ({
@@ -243,56 +334,59 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
         stopover: false,
       }));
 
-      let result: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      let result: google.maps.DirectionsResult;
       try {
         result = await directionsService.route({
-          origin: new google.maps.LatLng(locs[0].latitude, locs[0].longitude),
-          destination: new google.maps.LatLng(locs[locs.length - 1].latitude, locs[locs.length - 1].longitude),
+          origin:             new google.maps.LatLng(locs[0].latitude, locs[0].longitude),
+          destination:        new google.maps.LatLng(locs[locs.length - 1].latitude, locs[locs.length - 1].longitude),
           waypoints,
-          travelMode: google.maps.TravelMode.WALKING,
-          optimizeWaypoints: false,
+          travelMode:         google.maps.TravelMode.WALKING,
+          optimizeWaypoints:  false,
         });
       } catch { return; }
 
-      await google.maps.importLibrary("maps3d");
-      const Polyline3DElement = google.maps.maps3d?.Polyline3DElement;
-      if (!Polyline3DElement) return;
-
-      const coordinates: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-      result.routes[0].legs.forEach((leg: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
-        leg.steps.forEach((step: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
-          step.path?.forEach((p: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
-            coordinates.push({ lat: p.lat(), lng: p.lng(), altitude: 15 })
+      const positions: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+      result.routes[0].legs.forEach((leg) =>
+        leg.steps.forEach((step) =>
+          step.path?.forEach((p) =>
+            positions.push(Cesium.Cartesian3.fromDegrees(p.lng(), p.lat(), 15))
           )
         )
       );
 
-      const polyline = new Polyline3DElement({
-        altitudeMode: "ABSOLUTE",
-        strokeColor: "#38bdf8",
-        strokeWidth: 8,
-        drawsOccludedSegments: true,
+      const entity = viewer.entities.add({
+        polyline: {
+          positions,
+          width:    6,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            glowPower: 0.3,
+            color:     Cesium.Color.fromCssColorString("#38bdf8"),
+          }),
+          clampToGround:    false,
+          depthFailMaterial: new Cesium.ColorMaterialProperty(
+            Cesium.Color.fromCssColorString("#38bdf8").withAlpha(0.4)
+          ),
+        },
       });
-      polyline.coordinates = coordinates;
-      map.appendChild(polyline);
-      routePolylineRef.current = polyline;
+      routeEntityIdRef.current = entity.id as string;
     },
 
     clearRoute() {
-      routePolylineRef.current?.remove();
-      routePolylineRef.current = null;
+      const viewer = viewerRef.current;
+      if (!viewer || !routeEntityIdRef.current) return;
+      viewer.entities.removeById(routeEntityIdRef.current);
+      routeEntityIdRef.current = null;
     },
 
-    getMapElement() {
-      return mapRef.current;
-    },
+    getMapElement() { return null; },
   }));
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      mapRef.current?.remove();
-      mapRef.current = null;
+      if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+        viewerRef.current.destroy();
+        viewerRef.current = null;
+      }
     };
   }, []);
 
