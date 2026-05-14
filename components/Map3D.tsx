@@ -109,9 +109,10 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
         width:                    36,
         height:                   48,
         verticalOrigin:           C.VerticalOrigin.BOTTOM,
-        heightReference:          C.HeightReference.CLAMP_TO_GROUND,
+        // CLAMP_TO_3D_TILE snaps the pin onto the photorealistic tile mesh
+        // (CLAMP_TO_GROUND won't work when globe.show = false)
+        heightReference:          C.HeightReference.CLAMP_TO_3D_TILE,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        pixelOffset:              new C.Cartesian2(0, 0),
       },
     });
     markerMapRef.current.set(loc.id, entity);
@@ -160,10 +161,14 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     });
     viewerRef.current = viewer;
 
-    // Remove the default blue Bing/OSM imagery — the 3D tiles cover everything
+    // Remove default imagery and all sky elements; 3D tiles provide the full scene
     viewer.imageryLayers.removeAll();
-    viewer.scene.globe.show = false;
-    viewer.scene.backgroundColor = C.Color.fromCssColorString("#0e1620");
+    viewer.scene.globe.show        = false;
+    viewer.scene.skyBox.show       = false;
+    viewer.scene.sun.show          = false;
+    viewer.scene.moon.show         = false;
+    viewer.scene.skyAtmosphere.show = false;
+    viewer.scene.backgroundColor   = C.Color.fromCssColorString("#0e1620");
 
     // ── Load Google Photorealistic 3D Tiles via our proxy ──
     try {
