@@ -38,7 +38,9 @@ export async function GET(
   }
 
   if (!upstream.ok) {
-    return new NextResponse(null, { status: upstream.status });
+    const body = await upstream.text().catch(() => "");
+    console.error(`Tiles proxy: Google returned ${upstream.status} for ${tileUrl.pathname} — ${body}`);
+    return new NextResponse(body || null, { status: upstream.status, headers: { "Content-Type": "application/json" } });
   }
 
   const contentType = upstream.headers.get("Content-Type") ?? "application/octet-stream";
