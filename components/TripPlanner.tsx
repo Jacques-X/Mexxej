@@ -1,8 +1,40 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { supabase, addLocation, deleteLocation } from "@/lib/supabase";
-import type { Trip, TripLocation, LocationCategory, CameraPosition } from "@/types/trip";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverEvent,
+  DragStartEvent,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  closestCenter,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  supabase, addLocation, deleteLocation, reorderLocations, upsertDayNote,
+  addReservation, updateReservation, deleteReservation,
+  addBudgetItem, deleteBudgetItem,
+  addPackingItem, updatePackingItem, deletePackingItem,
+} from "@/lib/supabase";
+import type {
+  Trip, TripLocation, DayNote, LocationCategory, CameraPosition,
+  Reservation, BudgetItem, PackingItem,
+} from "@/types/trip";
+import ReservationsPanel from "./ReservationsPanel";
+import BudgetPanel from "./BudgetPanel";
+import PackingPanel from "./PackingPanel";
 import Map3D, { type Map3DHandle } from "./Map3D";
 import InfoCard from "./InfoCard";
 import StreetViewPortal from "./StreetViewPortal";
@@ -10,9 +42,15 @@ import TravelConcierge from "./TravelConcierge";
 import Logo from "./Logo";
 import { startCinematicFlyover } from "@/lib/cinematicFlyover";
 
+type ActiveTab = "map" | "reservations" | "budget" | "packing";
+
 interface Props {
   trip: Trip;
   initialLocations: TripLocation[];
+  initialDayNotes: DayNote[];
+  initialReservations: Reservation[];
+  initialBudgetItems: BudgetItem[];
+  initialPackingItems: PackingItem[];
   mapsApiKey: string;
 }
 
@@ -54,10 +92,22 @@ const Ico = {
   pin:     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 14s5-4.5 5-9a5 5 0 10-10 0c0 4.5 5 9 5 9z"/><circle cx="8" cy="5.5" r="1.6"/></svg>,
 };
 
-export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Props) {
+export default function TripPlanner({
+  trip, initialLocations, initialDayNotes,
+  initialReservations, initialBudgetItems, initialPackingItems,
+  mapsApiKey,
+}: Props) {
   const mapRef = useRef<Map3DHandle>(null);
 
   const [locations, setLocations] = useState<TripLocation[]>(initialLocations);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [dayNotes, setDayNotes] = useState<Record<number, string>>(
+    () => Object.fromEntries(initialDayNotes.map((n) => [n.day_number, n.content]))
+  );
+  const [activeTab, setActiveTab] = useState<ActiveTab>("map");
+  const [reservations, setReservations] = useState<Reservation[]>(initialReservations);
+  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>(initialBudgetItems);
+  const [packingItems, setPackingItems] = useState<PackingItem[]>(initialPackingItems);
   const [activeLocation, setActiveLocation] = useState<TripLocation | null>(null);
   const [streetViewLocation, setStreetViewLocation] = useState<TripLocation | null>(null);
   const [showConcierge, setShowConcierge] = useState(false);
@@ -117,6 +167,75 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
     setShowItinerary(false);
     flyTo(loc);
   }, [flyTo]);
+
+  // ── Drag-and-drop sensors ─────────────────────────────────
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string);
+  }, []);
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Determine if overId is a day-droppable (prefixed "day-") or a location id
+    const overIsDay = overId.startsWith("day-");
+    const targetDay = overIsDay
+      ? parseInt(overId.replace("day-", ""), 10)
+      : (locations.find((l) => l.id === overId)?.day_number ?? null);
+
+    if (targetDay === null) return;
+
+    const activeLoc = locations.find((l) => l.id === activeId);
+    if (!activeLoc) return;
+
+    let newLocations = [...locations];
+
+    if (activeLoc.day_number !== targetDay) {
+      // Cross-day move: change day_number, append at end of target day
+      const targetDayLocs = newLocations.filter((l) => l.id !== activeId && l.day_number === targetDay);
+      const newOrderIndex = targetDayLocs.length;
+      newLocations = newLocations.map((l) =>
+        l.id === activeId ? { ...l, day_number: targetDay, order_index: newOrderIndex } : l
+      );
+    } else {
+      // Same-day reorder
+      const dayLocs = newLocations.filter((l) => l.day_number === activeLoc.day_number);
+      const oldIdx = dayLocs.findIndex((l) => l.id === activeId);
+      const newIdx = dayLocs.findIndex((l) => l.id === overId);
+      if (oldIdx === -1 || newIdx === -1) return;
+
+      const reordered = [...dayLocs];
+      reordered.splice(oldIdx, 1);
+      reordered.splice(newIdx, 0, activeLoc);
+      const withNewIndexes = reordered.map((l, i) => ({ ...l, order_index: i }));
+
+      newLocations = newLocations.map((l) => {
+        const updated = withNewIndexes.find((u) => u.id === l.id);
+        return updated ?? l;
+      });
+    }
+
+    setLocations(newLocations.sort((a, b) => a.day_number - b.day_number || a.order_index - b.order_index));
+
+    try {
+      await reorderLocations(
+        newLocations.map((l) => ({ id: l.id, day_number: l.day_number, order_index: l.order_index }))
+      );
+    } catch {
+      // Rollback on failure
+      setLocations(locations);
+    }
+  }, [locations]);
 
   const handleAddLocation = async () => {
     if (isAdding) return;
@@ -215,85 +334,72 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   const dayCount = days.length;
 
   // Shared itinerary list
+  const activeDragLoc = activeDragId ? locations.find((l) => l.id === activeDragId) : null;
+
   const itineraryList = (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
     <div className="overflow-y-auto scroll-touch scrollbar-thin" style={{ flex: 1, padding: "0 18px 18px" }}>
-      {filteredDays.map((day, di) => {
-        const palette = DAY_PALETTES[(day - 1) % DAY_PALETTES.length];
+      {filteredDays.map((day) => {
         const dayLocs = byDay[day];
         const dayIdx = days.indexOf(day);
         const dayColor = DAY_PALETTES[dayIdx % DAY_PALETTES.length];
         return (
-          <div key={day} style={{ marginBottom: 14 }}>
-            {/* Day header */}
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span className="mxj-serif" style={{ fontSize: 36, lineHeight: 0.9, color: dayColor }}>
-                  {String(day).padStart(2, "0")}
-                </span>
-                <div>
-                  <div className="mxj-mono" style={{ marginBottom: 2 }}>Day {day}</div>
-                </div>
-              </div>
-              <span className="mxj-mono">{dayLocs.length} stop{dayLocs.length !== 1 ? "s" : ""}</span>
-            </div>
-
-            {/* Stops */}
-            <div style={{ paddingLeft: 4 }}>
-              {dayLocs.map((loc) => (
-                <div
-                  key={loc.id}
-                  className={`mxj-stop ${activeLocation?.id === loc.id ? "is-active" : ""}`}
-                  style={{ padding: "8px 10px", alignItems: "flex-start", cursor: "pointer" }}
-                  onClick={() => handleMarkerClick(loc)}
-                >
-                  <span
-                    className="mxj-stop-marker"
-                    style={{ background: CATEGORY_META[loc.category].color, marginTop: 7, flexShrink: 0 }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {loc.name}
-                      </span>
-                      <span className="mxj-mono" style={{ fontSize: 9, flexShrink: 0 }}>
-                        {CATEGORY_META[loc.category].glyph} {CATEGORY_META[loc.category].label}
-                      </span>
-                    </div>
-                    {loc.description && (
-                      <div className="mxj-mono" style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {loc.description}
-                      </div>
-                    )}
+          <DayDropZone key={day} dayNumber={day}>
+            <div style={{ marginBottom: 14 }}>
+              {/* Day header */}
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <span className="mxj-serif" style={{ fontSize: 36, lineHeight: 0.9, color: dayColor }}>
+                    {String(day).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <div className="mxj-mono" style={{ marginBottom: 2 }}>Day {day}</div>
                   </div>
-                  {/* Delete button */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(loc.id); }}
-                    style={{
-                      background: "none", border: "none", color: "var(--mxj-faint)",
-                      cursor: "pointer", padding: "4px 6px", flexShrink: 0,
-                      display: "flex", alignItems: "center",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = "#e07070")}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mxj-faint)")}
-                  >
-                    {Ico.trash}
-                  </button>
                 </div>
-              ))}
+                <span className="mxj-mono">{dayLocs.length} stop{dayLocs.length !== 1 ? "s" : ""}</span>
+              </div>
 
-              {/* Add stop ghost button */}
-              <button
-                className="mxj-btn mxj-btn-ghost"
-                onClick={() => {
-                  setAddForm((f) => ({ ...f, day_number: String(day) }));
-                  setShowAddPanel(true);
-                }}
-                style={{ padding: "6px 10px", marginLeft: 14, marginTop: 4, fontFamily: "var(--mxj-mono)", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase" }}
-              >
-                {Ico.plus}<span>add stop</span>
-              </button>
+              {/* Day note */}
+              <DayNoteField
+                value={dayNotes[day] ?? ""}
+                onChange={(v) => setDayNotes((prev) => ({ ...prev, [day]: v }))}
+                onBlur={(v) => { if (v.trim()) upsertDayNote(trip.id, day, v).catch(() => {}); }}
+              />
+
+              {/* Stops */}
+              <div style={{ paddingLeft: 4 }}>
+                <SortableContext items={dayLocs.map((l) => l.id)} strategy={verticalListSortingStrategy}>
+                  {dayLocs.map((loc) => (
+                    <SortableStop
+                      key={loc.id}
+                      loc={loc}
+                      isActive={activeLocation?.id === loc.id}
+                      isDragging={activeDragId === loc.id}
+                      onMarkerClick={handleMarkerClick}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                </SortableContext>
+
+                {/* Add stop ghost button */}
+                <button
+                  className="mxj-btn mxj-btn-ghost"
+                  onClick={() => {
+                    setAddForm((f) => ({ ...f, day_number: String(day) }));
+                    setShowAddPanel(true);
+                  }}
+                  style={{ padding: "6px 10px", marginLeft: 14, marginTop: 4, fontFamily: "var(--mxj-mono)", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase" }}
+                >
+                  {Ico.plus}<span>add stop</span>
+                </button>
+              </div>
             </div>
-          </div>
+          </DayDropZone>
         );
       })}
 
@@ -304,6 +410,21 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         </div>
       )}
     </div>
+    <DragOverlay>
+      {activeDragLoc ? (
+        <div
+          className="mxj-stop mxj-glass"
+          style={{ padding: "8px 10px", alignItems: "flex-start", borderRadius: 8, opacity: 0.95, boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}
+        >
+          <span className="mxj-drag-handle" style={{ opacity: 1 }}>⠿</span>
+          <span className="mxj-stop-marker" style={{ background: CATEGORY_META[activeDragLoc.category].color, marginTop: 7, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{activeDragLoc.name}</span>
+          </div>
+        </div>
+      ) : null}
+    </DragOverlay>
+    </DndContext>
   );
 
   // Day filter pill tabs
@@ -334,7 +455,8 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
   return (
     <div className="h-screen-safe" style={{ position: "relative", overflow: "hidden", background: "var(--mxj-bg)" }}>
 
-      {/* ── Full-screen 3D Map ── */}
+      {/* ── Full-screen 3D Map — always mounted, hidden on other tabs ── */}
+      <div style={{ position: "absolute", inset: 0, visibility: activeTab === "map" ? "visible" : "hidden", pointerEvents: activeTab === "map" ? "auto" : "none" }}>
       <Map3D
         ref={mapRef}
         apiKey={mapsApiKey}
@@ -343,6 +465,40 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         initialCenter={mapCenter}
         destination={trip.destination}
       />
+      </div>
+
+      {/* ── Non-map panels (mobile full-screen) ── */}
+      {activeTab !== "map" && (
+        <div className="md:hidden" style={{ position: "absolute", inset: 0, overflowY: "auto", background: "var(--mxj-bg)", paddingBottom: 64, zIndex: 5 }}>
+          {activeTab === "reservations" && (
+            <ReservationsPanel
+              trip={trip}
+              reservations={reservations}
+              onAdd={async (r) => { const res = await addReservation(r); setReservations((p) => [...p, res]); }}
+              onUpdate={async (id, updates) => { await updateReservation(id, updates); setReservations((p) => p.map((rv) => rv.id === id ? { ...rv, ...updates } : rv)); }}
+              onDelete={async (id) => { await deleteReservation(id); setReservations((p) => p.filter((rv) => rv.id !== id)); }}
+            />
+          )}
+          {activeTab === "budget" && (
+            <BudgetPanel
+              trip={trip}
+              items={budgetItems}
+              locations={locations}
+              onAdd={async (item) => { const b = await addBudgetItem(item); setBudgetItems((p) => [...p, b]); }}
+              onDelete={async (id) => { await deleteBudgetItem(id); setBudgetItems((p) => p.filter((b) => b.id !== id)); }}
+            />
+          )}
+          {activeTab === "packing" && (
+            <PackingPanel
+              trip={trip}
+              items={packingItems}
+              onAdd={async (item) => { const p = await addPackingItem(item); setPackingItems((prev) => [...prev, p]); }}
+              onUpdate={async (id, updates) => { await updatePackingItem(id, updates); setPackingItems((p) => p.map((i) => i.id === id ? { ...i, ...updates } : i)); }}
+              onDelete={async (id) => { await deletePackingItem(id); setPackingItems((p) => p.filter((i) => i.id !== id)); }}
+            />
+          )}
+        </div>
+      )}
 
       {/* ════════ DESKTOP (md+) ════════ */}
 
@@ -394,15 +550,68 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         }}
       >
         <div className="mxj-glass" style={{ borderRadius: 18, display: "flex", flexDirection: "column", overflow: "hidden", height: "100%" }}>
-          <div style={{ padding: "20px 22px 14px", flexShrink: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
-              <h2 className="mxj-serif" style={{ fontSize: 26, margin: 0 }}>Itinerary</h2>
-              <span className="mxj-mono" style={{ cursor: "pointer" }} onClick={() => setShowItinerary(false)}>✕ hide</span>
-            </div>
-            {dayTabs}
+          {/* Desktop tab bar */}
+          <div style={{ display: "flex", borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0 }}>
+            {(["map", "reservations", "budget", "packing"] as ActiveTab[]).map((tab) => {
+              const labels: Record<ActiveTab, string> = { map: "Itinerary", reservations: "Bookings", budget: "Budget", packing: "Packing" };
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  style={{
+                    flex: 1, padding: "12px 0", background: "none", border: "none",
+                    borderBottom: activeTab === tab ? "2px solid var(--mxj-accent)" : "2px solid transparent",
+                    color: activeTab === tab ? "var(--mxj-accent)" : "var(--mxj-muted)",
+                    cursor: "pointer", fontSize: 10, fontFamily: "var(--mxj-mono)",
+                    letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: -1,
+                  }}
+                >
+                  {labels[tab]}
+                </button>
+              );
+            })}
+            <span className="mxj-mono" style={{ padding: "12px 14px", cursor: "pointer", fontSize: 11, color: "var(--mxj-muted)", flexShrink: 0 }} onClick={() => setShowItinerary(false)}>✕</span>
           </div>
-          <hr className="mxj-divider" />
-          {itineraryList}
+
+          {activeTab === "map" ? (
+            <>
+              <div style={{ padding: "14px 22px 10px", flexShrink: 0 }}>
+                {dayTabs}
+              </div>
+              <hr className="mxj-divider" />
+              {itineraryList}
+            </>
+          ) : (
+            <div style={{ flex: 1, overflowY: "auto", padding: "0" }}>
+              {activeTab === "reservations" && (
+                <ReservationsPanel
+                  trip={trip}
+                  reservations={reservations}
+                  onAdd={async (r) => { const res = await addReservation(r); setReservations((p) => [...p, res]); }}
+                  onUpdate={async (id, updates) => { await updateReservation(id, updates); setReservations((p) => p.map((rv) => rv.id === id ? { ...rv, ...updates } : rv)); }}
+                  onDelete={async (id) => { await deleteReservation(id); setReservations((p) => p.filter((rv) => rv.id !== id)); }}
+                />
+              )}
+              {activeTab === "budget" && (
+                <BudgetPanel
+                  trip={trip}
+                  items={budgetItems}
+                  locations={locations}
+                  onAdd={async (item) => { const b = await addBudgetItem(item); setBudgetItems((p) => [...p, b]); }}
+                  onDelete={async (id) => { await deleteBudgetItem(id); setBudgetItems((p) => p.filter((b) => b.id !== id)); }}
+                />
+              )}
+              {activeTab === "packing" && (
+                <PackingPanel
+                  trip={trip}
+                  items={packingItems}
+                  onAdd={async (item) => { const p = await addPackingItem(item); setPackingItems((prev) => [...prev, p]); }}
+                  onUpdate={async (id, updates) => { await updatePackingItem(id, updates); setPackingItems((p) => p.map((i) => i.id === id ? { ...i, ...updates } : i)); }}
+                  onDelete={async (id) => { await deletePackingItem(id); setPackingItems((p) => p.filter((i) => i.id !== id)); }}
+                />
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -565,6 +774,45 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
         />
       )}
 
+      {/* ── Tab bar (bottom on mobile, top of sidebar on desktop) ── */}
+      <nav
+        className="md:hidden mxj-glass-strong"
+        style={{
+          position: "absolute", bottom: 0, left: 0, right: 0,
+          zIndex: 20,
+          display: "flex",
+          borderTop: "1px solid var(--mxj-stroke)",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}
+      >
+        {(["map", "reservations", "budget", "packing"] as ActiveTab[]).map((tab) => {
+          const labels: Record<ActiveTab, string> = { map: "Map", reservations: "Bookings", budget: "Budget", packing: "Packing" };
+          const glyphs: Record<ActiveTab, React.ReactNode> = {
+            map: <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 14s5-4.5 5-9a5 5 0 10-10 0c0 4.5 5 9 5 9z"/><circle cx="8" cy="5.5" r="1.6"/></svg>,
+            reservations: <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 3V1M11 3V1M2 7h12"/></svg>,
+            budget: <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6"/><path d="M8 5v1.5M8 9.5V11M6.5 6.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5S9 8 8 8s-1.5.67-1.5 1.5S7.17 11 8 11"/></svg>,
+            packing: <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="3" y="5" width="10" height="9" rx="1"/><path d="M6 5V3.5A1.5 1.5 0 0110 3.5V5"/><path d="M5 9l1.5 1.5L9 7"/></svg>,
+          };
+          return (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+                gap: 3, padding: "10px 0", background: "none", border: "none",
+                color: activeTab === tab ? "var(--mxj-accent)" : "var(--mxj-muted)",
+                cursor: "pointer", fontSize: 9, fontFamily: "var(--mxj-mono)",
+                letterSpacing: "0.06em", textTransform: "uppercase",
+                borderTop: activeTab === tab ? "2px solid var(--mxj-accent)" : "2px solid transparent",
+              }}
+            >
+              {glyphs[tab]}
+              {labels[tab]}
+            </button>
+          );
+        })}
+      </nav>
+
       {/* Recording badge */}
       {isRecording && (
         <div className="mxj-glass" style={{
@@ -605,6 +853,139 @@ export default function TripPlanner({ trip, initialLocations, mapsApiKey }: Prop
           <span style={{ fontSize: 13, color: "#e07070" }}>{deleteError}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Day note inline field ──
+function DayNoteField({
+  value, onChange, onBlur,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onBlur: (v: string) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+
+  if (!focused && !value) {
+    return (
+      <button
+        onClick={() => setFocused(true)}
+        className="mxj-mono"
+        style={{
+          background: "none", border: "none", cursor: "pointer",
+          color: "var(--mxj-faint)", fontSize: 9, padding: "2px 0 8px",
+          letterSpacing: "0.08em", textTransform: "uppercase",
+        }}
+      >
+        + add day note
+      </button>
+    );
+  }
+
+  return (
+    <textarea
+      autoFocus={focused && !value}
+      value={value}
+      rows={2}
+      placeholder="Day notes — logistics, tips, reminders…"
+      className="mxj-input"
+      style={{ width: "100%", resize: "none", fontSize: 12, marginBottom: 8, height: "auto" }}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => { setFocused(false); onBlur(e.target.value); }}
+    />
+  );
+}
+
+// ── Sortable stop row ──
+function SortableStop({
+  loc, isActive, isDragging, onMarkerClick, onDelete,
+}: {
+  loc: TripLocation;
+  isActive: boolean;
+  isDragging: boolean;
+  onMarkerClick: (loc: TripLocation) => void;
+  onDelete: (id: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: loc.id,
+    data: { dayNumber: loc.day_number },
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    padding: "8px 10px",
+    alignItems: "flex-start" as const,
+    cursor: "pointer" as const,
+    opacity: isDragging ? 0.35 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`mxj-stop ${isActive ? "is-active" : ""}`}
+      onClick={() => !isDragging && onMarkerClick(loc)}
+    >
+      <span
+        className="mxj-drag-handle"
+        {...attributes}
+        {...listeners}
+        onClick={(e) => e.stopPropagation()}
+        title="Drag to reorder"
+      >
+        ⠿
+      </span>
+      <span
+        className="mxj-stop-marker"
+        style={{ background: CATEGORY_META[loc.category].color, marginTop: 7, flexShrink: 0 }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {loc.name}
+          </span>
+          <span className="mxj-mono" style={{ fontSize: 9, flexShrink: 0 }}>
+            {CATEGORY_META[loc.category].glyph} {CATEGORY_META[loc.category].label}
+          </span>
+        </div>
+        {loc.description && (
+          <div className="mxj-mono" style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {loc.description}
+          </div>
+        )}
+      </div>
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(loc.id); }}
+        style={{
+          background: "none", border: "none", color: "var(--mxj-faint)",
+          cursor: "pointer", padding: "4px 6px", flexShrink: 0,
+          display: "flex", alignItems: "center",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.color = "#e07070")}
+        onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mxj-faint)")}
+      >
+        {Ico.trash}
+      </button>
+    </div>
+  );
+}
+
+// ── Day drop zone ──
+function DayDropZone({ dayNumber, children }: { dayNumber: number; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `day-${dayNumber}` });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        borderRadius: 8,
+        transition: "background 0.15s",
+        background: isOver ? "rgba(136,168,192,0.07)" : "transparent",
+      }}
+    >
+      {children}
     </div>
   );
 }

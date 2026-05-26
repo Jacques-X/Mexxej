@@ -208,6 +208,30 @@ body {
 .mxj-stop:hover { background: rgba(246, 239, 228, 0.04); }
 .mxj-stop.is-active { background: rgba(232, 140, 100, 0.08); }
 
+.mxj-stop.is-dragging {
+  opacity: 0.4;
+  background: rgba(232, 140, 100, 0.06);
+}
+.mxj-stop.is-drag-over {
+  background: rgba(136, 168, 192, 0.1);
+  border-radius: 8px;
+}
+.mxj-drag-handle {
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: grab;
+  color: var(--mxj-faint);
+  display: flex;
+  align-items: center;
+  padding: 0 2px;
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+.mxj-stop:hover .mxj-drag-handle { opacity: 1; }
+.mxj-drag-handle:active { cursor: grabbing; }
+
 .mxj-stop-marker {
   width: 8px;
   height: 8px;
