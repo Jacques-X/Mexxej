@@ -40,7 +40,6 @@ import InfoCard from "./InfoCard";
 import StreetViewPortal from "./StreetViewPortal";
 import TravelConcierge from "./TravelConcierge";
 import Logo from "./Logo";
-import { startCinematicFlyover } from "@/lib/cinematicFlyover";
 
 type ActiveTab = "map" | "reservations" | "budget" | "packing";
 
@@ -113,7 +112,6 @@ export default function TripPlanner({
   const [showConcierge, setShowConcierge] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [showItinerary, setShowItinerary] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [routeVisible, setRouteVisible] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -301,13 +299,6 @@ export default function TripPlanner({
       await mapRef.current?.drawRoute(locations);
       setRouteVisible(true);
     }
-  };
-
-  const handleCinematicExport = async () => {
-    if (!mapRef.current) return;
-    setIsRecording(true);
-    try { await startCinematicFlyover(mapRef.current, locations); }
-    finally { setIsRecording(false); }
   };
 
   const handleShare = () => {
@@ -640,7 +631,6 @@ export default function TripPlanner({
       }}>
         <IconCircle label="Add stop" onClick={() => setShowAddPanel(true)}>{Ico.plus}</IconCircle>
         <IconCircle label="Toggle route" active={routeVisible} onClick={toggleRoute}>{Ico.route}</IconCircle>
-        <IconCircle label={isRecording ? "Recording…" : "Cinematic"} active={isRecording} onClick={handleCinematicExport} disabled={isRecording}>{Ico.film}</IconCircle>
         <hr className="mxj-divider" style={{ width: 24, margin: "4px auto" }} />
         <IconCircle label="AI concierge" active={showConcierge} onClick={() => setShowConcierge((v) => !v)}>{Ico.sparkle}</IconCircle>
       </div>
@@ -678,7 +668,6 @@ export default function TripPlanner({
         gap: 8, zIndex: 3,
       }}>
         <IconCircle size={40} active={routeVisible} onClick={toggleRoute}>{Ico.route}</IconCircle>
-        <IconCircle size={40} active={isRecording} onClick={handleCinematicExport} disabled={isRecording}>{Ico.film}</IconCircle>
         <IconCircle size={40} active={showConcierge} onClick={() => setShowConcierge((v) => !v)}>{Ico.sparkle}</IconCircle>
       </div>
 
@@ -813,19 +802,7 @@ export default function TripPlanner({
         })}
       </nav>
 
-      {/* Recording badge */}
-      {isRecording && (
-        <div className="mxj-glass" style={{
-          position: "absolute", bottom: 80, left: "50%", transform: "translateX(-50%)",
-          zIndex: 50, borderRadius: 999, padding: "8px 20px",
-          display: "flex", alignItems: "center", gap: 8,
-        }}>
-          <span style={{ width: 8, height: 8, borderRadius: 4, background: "#e07070" }} className="mxj-pulse" />
-          <span style={{ fontSize: 13, fontWeight: 500, color: "#f6a0a0" }}>Recording Flyover…</span>
-        </div>
-      )}
-
-      {/* Add error toast */}
+{/* Add error toast */}
       {addError && (
         <div className="mxj-glass" style={{
           position: "absolute", bottom: 80, left: "50%", transform: "translateX(-50%)",
