@@ -1116,65 +1116,39 @@ function AddPinPanel({
     let cancelled = false;
 
     async function attach() {
-      console.log("[PAC] attach() called, cancelled=", cancelled, "container=", acContainerRef.current);
       const container = acContainerRef.current;
       if (!container || cancelled) return;
       container.innerHTML = "";
 
-      // Places API (New) requires importLibrary, not google.maps.places.*
+      // Use classic Autocomplete — reliable place_changed event with geometry
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const lib = await (google.maps as any).importLibrary("places");
-      console.log("[PAC] importLibrary result keys:", Object.keys(lib));
-      const PlaceAutocompleteElement = lib.PlaceAutocompleteElement;
-      console.log("[PAC] PlaceAutocompleteElement:", PlaceAutocompleteElement);
+      await (google.maps as any).importLibrary("places");
       if (cancelled || !acContainerRef.current) return;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const el: any = new PlaceAutocompleteElement();
-      console.log("[PAC] element created:", el);
+      const input = document.createElement("input");
+      input.className = "mxj-input";
+      input.placeholder = "Search for a place…";
+      input.style.width = "100%";
+      input.style.boxSizing = "border-box";
       acContainerRef.current.innerHTML = "";
-      acContainerRef.current.appendChild(el);
-      console.log("[PAC] element appended, adding event listener");
-
-      // Debug: catch all events to find the right one
-      ["gmp-placeselect", "gmp-placepredictionselect", "change", "input", "select"].forEach((evtName) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        el.addEventListener(evtName, (e: any) => console.log("[PAC event fired]", evtName, e));
-      });
+      acContainerRef.current.appendChild(input);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      el.addEventListener("gmp-placeselect", async (e: any) => {
-        try {
-          console.log("[PAC raw event]", e, Object.keys(e));
-          const place = e.place;
-          console.log("[PAC place before fetch]", place, place ? Object.keys(place) : null);
-          await place.fetchFields({ fields: ["displayName", "location"] });
-          console.log("[PAC place after fetch]", {
-            displayName: place.displayName,
-            location: place.location,
-            lat: place.location?.lat?.(),
-            lng: place.location?.lng?.(),
-          });
-
-          const name: string = place.displayName ?? "";
-          const loc = place.location;
-          const lat: number = typeof loc?.lat === "function" ? loc.lat() : Number(loc?.lat);
-          const lng: number = typeof loc?.lng === "function" ? loc.lng() : Number(loc?.lng);
-
-          if (!isFinite(lat) || !isFinite(lng)) return;
-          onChangeRef.current("name", name);
-          onChangeRef.current("latitude", String(lat));
-          onChangeRef.current("longitude", String(lng));
-        } catch (err) {
-          console.error("PlaceSelect error:", err);
-        }
+      const ac = new (google.maps.places as any).Autocomplete(input, { fields: ["name", "geometry"] });
+      ac.addListener("place_changed", () => {
+        const place = ac.getPlace();
+        if (!place.geometry?.location) return;
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        const name: string = place.name ?? input.value;
+        onChangeRef.current("name", name);
+        onChangeRef.current("latitude", String(lat));
+        onChangeRef.current("longitude", String(lng));
       });
     }
 
-    // Wait for google.maps to be available then attach
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ready = () => typeof google !== "undefined" && typeof (google.maps as any)?.importLibrary === "function";
-    console.log("[PAC] ready on mount:", ready());
 
     if (ready()) {
       attach();
