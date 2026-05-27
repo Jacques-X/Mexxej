@@ -29,10 +29,11 @@ export default function StreetViewPortal({ location, onClose }: Props) {
     <div style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column" }}>
       <div ref={containerRef} style={{ flex: 1 }} />
 
-      {/* Controls bar */}
+      {/* Controls bar — zIndex must exceed Google Maps panorama layer */}
       <div style={{
-        position: "absolute", top: 16, left: 16,
+        position: "absolute", top: 16, left: 16, zIndex: 10,
         display: "flex", alignItems: "center", gap: 10,
+        pointerEvents: "auto",
       }}>
         <button
           onClick={onClose}
