@@ -61,11 +61,14 @@ interface ControllerProps {
   onMarkerClick: (location: TripLocation) => void;
   initialCenter: { lat: number; lng: number };
   controllerRef: React.MutableRefObject<Map3DHandle | null>;
+  destination?: string;
+  hasInitialCenter: boolean;
 }
 
-function MapController({ locations, onMarkerClick, initialCenter, controllerRef }: ControllerProps) {
+function MapController({ locations, onMarkerClick, controllerRef, destination, hasInitialCenter }: ControllerProps) {
   const map = useMap();
   const mapsLib = useMapsLibrary("maps");
+  const geocodingLib = useMapsLibrary("geocoding");
   const markerMapRef = useRef(new globalThis.Map<string, google.maps.Marker>());
   const polylineRef = useRef<google.maps.Polyline | null>(null);
   const onClickRef = useRef(onMarkerClick);
@@ -165,6 +168,21 @@ function MapController({ locations, onMarkerClick, initialCenter, controllerRef 
     };
   }, [map, mapsLib, controllerRef]);
 
+  // ── Geocode destination if no initialCenter ────────────────
+  const geocodedRef = useRef(false);
+  useEffect(() => {
+    if (!map || !geocodingLib || hasInitialCenter || !destination || geocodedRef.current) return;
+    geocodedRef.current = true;
+    const geocoder = new geocodingLib.Geocoder();
+    geocoder.geocode({ address: destination }, (results, status) => {
+      if (status === "OK" && results?.[0]) {
+        const loc = results[0].geometry.location;
+        map.panTo({ lat: loc.lat(), lng: loc.lng() });
+        map.setZoom(12);
+      }
+    });
+  }, [map, geocodingLib, destination, hasInitialCenter]);
+
   // ── Cleanup ────────────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -196,35 +214,9 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
     getMapElement: () => controllerRef.current?.getMapElement() ?? null,
   }));
 
-  // Geocode destination to set initial center if no initialCenter provided
-  const geocodedRef = useRef(false);
-  useEffect(() => {
-    if (initialCenter || geocodedRef.current || !destination) return;
-    geocodedRef.current = true;
-    // Wait for Google Maps to load
-    const tryGeocode = () => {
-      if (!(window as unknown as { google?: { maps?: unknown } }).google?.maps) {
-        setTimeout(tryGeocode, 500);
-        return;
-      }
-      const geocoder = new google.maps.Geocoder();
-      geocoder.geocode({ address: destination }, (results, status) => {
-        if (status === "OK" && results?.[0]) {
-          const loc = results[0].geometry.location;
-          controllerRef.current?.flyCameraTo({
-            center: { lat: loc.lat(), lng: loc.lng() },
-            tilt: 0,
-            heading: 0,
-            range: 50000,
-          });
-        }
-      });
-    };
-    tryGeocode();
-  }, [destination, initialCenter]);
 
   return (
-    <APIProvider apiKey={apiKey} libraries={["places"]}>
+    <APIProvider apiKey={apiKey} libraries={["places", "geocoding"]}>
       <GoogleMap
         style={{ width: "100%", height: "100%" }}
         defaultCenter={resolvedCenter}
@@ -240,6 +232,8 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
           onMarkerClick={onMarkerClick}
           initialCenter={resolvedCenter}
           controllerRef={controllerRef}
+          destination={destination}
+          hasInitialCenter={!!initialCenter}
         />
       </GoogleMap>
     </APIProvider>
