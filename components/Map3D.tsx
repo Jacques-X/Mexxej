@@ -204,7 +204,7 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
 
 
   return (
-    <APIProvider apiKey={apiKey} libraries={["places", "geocoding"]}>
+    <APIProvider apiKey={apiKey} version="weekly" libraries={["places", "geocoding"]}>
       <GoogleMap
         style={{ width: "100%", height: "100%" }}
         defaultCenter={resolvedCenter}

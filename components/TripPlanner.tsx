@@ -1033,12 +1033,15 @@ function AddPinPanel({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       el.addEventListener("gmp-placeselect", async (e: any) => {
         try {
-          const place = e.place;
+          // New Places API (weekly): event has placePrediction, not place
+          const place = e.placePrediction ? e.placePrediction.toPlace() : e.place;
           await place.fetchFields({ fields: ["displayName", "location"] });
           const name: string = place.displayName ?? "";
+          const lat = place.location?.lat?.() ?? place.location?.latitude;
+          const lng = place.location?.lng?.() ?? place.location?.longitude;
           onChangeRef.current("name", name);
-          onChangeRef.current("latitude", place.location.lat().toString());
-          onChangeRef.current("longitude", place.location.lng().toString());
+          onChangeRef.current("latitude", String(lat));
+          onChangeRef.current("longitude", String(lng));
         } catch (err) {
           console.error("Failed to select place:", err);
         }
@@ -1122,6 +1125,32 @@ function AddPinPanel({
               <div style={{ marginTop: 6, fontSize: 11, color: "#7ec896", fontFamily: "var(--mxj-mono)", letterSpacing: "0.1em" }}>
                 ✓ {coordsLabel}
               </div>
+            )}
+            {/* Manual fallback */}
+            {!form.latitude && (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ fontSize: 11, fontFamily: "var(--mxj-mono)", color: "var(--mxj-muted)", cursor: "pointer" }}>
+                  Enter coordinates manually
+                </summary>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                  <input
+                    className="mxj-input"
+                    placeholder="Latitude"
+                    type="number"
+                    step="any"
+                    value={form.latitude}
+                    onChange={(e) => onChange("latitude", e.target.value)}
+                  />
+                  <input
+                    className="mxj-input"
+                    placeholder="Longitude"
+                    type="number"
+                    step="any"
+                    value={form.longitude}
+                    onChange={(e) => onChange("longitude", e.target.value)}
+                  />
+                </div>
+              </details>
             )}
           </div>
 
