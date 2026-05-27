@@ -1,6 +1,13 @@
 import type { TripLocation } from "@/types/trip";
 
-const WALK_SPEED_KMH = 5;
+export type TransportMode = "walk" | "cycle" | "drive" | "transit";
+
+export const TRANSPORT_META: Record<TransportMode, { label: string; icon: string; speedKmh: number }> = {
+  walk:    { label: "Walking",  icon: "🚶", speedKmh: 5  },
+  cycle:   { label: "Cycling",  icon: "🚲", speedKmh: 15 },
+  drive:   { label: "Driving",  icon: "🚗", speedKmh: 40 },
+  transit: { label: "Transit",  icon: "🚌", speedKmh: 20 },
+};
 
 function haversineKm(a: TripLocation, b: TripLocation): number {
   const R = 6371;
@@ -14,8 +21,8 @@ function haversineKm(a: TripLocation, b: TripLocation): number {
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
-function travelMinutes(a: TripLocation, b: TripLocation): number {
-  return Math.round((haversineKm(a, b) / WALK_SPEED_KMH) * 60);
+function travelMinutes(a: TripLocation, b: TripLocation, mode: TransportMode = "walk"): number {
+  return Math.round((haversineKm(a, b) / TRANSPORT_META[mode].speedKmh) * 60);
 }
 
 function parseMinutes(hhmm: string): number {
@@ -37,7 +44,7 @@ export interface StopTiming {
   isAnchor: boolean;             // has a user-set arrival_time
 }
 
-export function computeDayTimeline(stops: TripLocation[]): StopTiming[] {
+export function computeDayTimeline(stops: TripLocation[], mode: TransportMode = "walk"): StopTiming[] {
   if (stops.length === 0) return [];
 
   // Find the first anchor (user-set arrival_time)
@@ -47,7 +54,7 @@ export function computeDayTimeline(stops: TripLocation[]): StopTiming[] {
     locationId: s.id,
     arrivalMin: null,
     departureMin: null,
-    travelToNextMin: i < stops.length - 1 ? travelMinutes(s, stops[i + 1]) : 0,
+    travelToNextMin: i < stops.length - 1 ? travelMinutes(s, stops[i + 1], mode) : 0,
     isAnchor: !!s.arrival_time,
   }));
 

@@ -40,7 +40,7 @@ import InfoCard from "./InfoCard";
 import StreetViewPortal from "./StreetViewPortal";
 import TravelConcierge from "./TravelConcierge";
 import Logo from "./Logo";
-import { computeDayTimeline, formatMinutes, type StopTiming } from "@/lib/timeline";
+import { computeDayTimeline, formatMinutes, type StopTiming, type TransportMode, TRANSPORT_META } from "@/lib/timeline";
 
 type ActiveTab = "map" | "reservations" | "budget" | "packing";
 
@@ -105,6 +105,7 @@ export default function TripPlanner({
     () => Object.fromEntries(initialDayNotes.map((n) => [n.day_number, n.content]))
   );
   const [activeTab, setActiveTab] = useState<ActiveTab>("map");
+  const [dayTransportModes, setDayTransportModes] = useState<Record<number, TransportMode>>({});
   const [reservations, setReservations] = useState<Reservation[]>(initialReservations);
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>(initialBudgetItems);
   const [packingItems, setPackingItems] = useState<PackingItem[]>(initialPackingItems);
@@ -340,7 +341,8 @@ export default function TripPlanner({
         const dayLocs = byDay[day];
         const dayIdx = days.indexOf(day);
         const dayColor = DAY_PALETTES[dayIdx % DAY_PALETTES.length];
-        const timings = computeDayTimeline(dayLocs);
+        const transportMode: TransportMode = dayTransportModes[day] ?? "walk";
+        const timings = computeDayTimeline(dayLocs, transportMode);
         const timingById = Object.fromEntries(timings.map((t) => [t.locationId, t]));
         return (
           <DayDropZone key={day} dayNumber={day}>
@@ -355,7 +357,26 @@ export default function TripPlanner({
                     <div className="mxj-mono" style={{ marginBottom: 2 }}>Day {day}</div>
                   </div>
                 </div>
-                <span className="mxj-mono">{dayLocs.length} stop{dayLocs.length !== 1 ? "s" : ""}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span className="mxj-mono" style={{ fontSize: 10 }}>{dayLocs.length} stop{dayLocs.length !== 1 ? "s" : ""}</span>
+                  <div style={{ display: "flex", gap: 2 }}>
+                    {(Object.keys(TRANSPORT_META) as TransportMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        title={TRANSPORT_META[mode].label}
+                        onClick={() => setDayTransportModes((p) => ({ ...p, [day]: mode }))}
+                        style={{
+                          background: transportMode === mode ? "var(--mxj-glass-bg)" : "none",
+                          border: "none", cursor: "pointer",
+                          fontSize: 13, padding: "2px 3px", borderRadius: 4,
+                          opacity: transportMode === mode ? 1 : 0.3,
+                        } as React.CSSProperties}
+                      >
+                        {TRANSPORT_META[mode].icon}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Day note */}
@@ -376,6 +397,7 @@ export default function TripPlanner({
                         key={loc.id}
                         loc={loc}
                         timing={timing}
+                        transportMode={transportMode}
                         isActive={activeLocation?.id === loc.id}
                         isDragging={activeDragId === loc.id}
                         onMarkerClick={handleMarkerClick}
@@ -890,11 +912,12 @@ function DayNoteField({
 
 // ── Sortable stop row ──
 function SortableStop({
-  loc, timing, travelToNextMin, isActive, isDragging, onMarkerClick, onDelete, onUpdate,
+  loc, timing, travelToNextMin, transportMode, isActive, isDragging, onMarkerClick, onDelete, onUpdate,
 }: {
   loc: TripLocation;
   timing?: StopTiming;
   travelToNextMin?: number;
+  transportMode?: TransportMode;
   isActive: boolean;
   isDragging: boolean;
   onMarkerClick: (loc: TripLocation) => void;
@@ -1038,7 +1061,10 @@ function SortableStop({
       {travelToNextMin !== undefined && travelToNextMin > 0 && (
         <div style={{ paddingLeft: 44, marginBottom: 2 }}>
           <span className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-faint)" }}>
-            🚶 {travelToNextMin < 60 ? `${travelToNextMin} min walk` : `${Math.round(travelToNextMin / 60 * 10) / 10} h walk`}
+            {TRANSPORT_META[transportMode ?? "walk"].icon}{" "}
+            {travelToNextMin < 60
+              ? `${travelToNextMin} min`
+              : `${Math.round(travelToNextMin / 60 * 10) / 10} h`}
           </span>
         </div>
       )}
