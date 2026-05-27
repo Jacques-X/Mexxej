@@ -1136,6 +1136,12 @@ function AddPinPanel({
       acContainerRef.current.appendChild(el);
       console.log("[PAC] element appended, adding event listener");
 
+      // Debug: catch all events to find the right one
+      ["gmp-placeselect", "gmp-placepredictionselect", "change", "input", "select"].forEach((evtName) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        el.addEventListener(evtName, (e: any) => console.log("[PAC event fired]", evtName, e));
+      });
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       el.addEventListener("gmp-placeselect", async (e: any) => {
         try {
