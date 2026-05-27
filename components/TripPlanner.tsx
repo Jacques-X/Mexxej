@@ -30,6 +30,7 @@ import ReservationsPanel from "./ReservationsPanel";
 import PackingPanel from "./PackingPanel";
 import TravelConcierge from "./TravelConcierge";
 import Logo from "./Logo";
+import DeleteTripButton from "./DeleteTripButton";
 
 // ── Types ──────────────────────────────────────────────────────
 type ActiveTab = "map" | "reservations" | "budget" | "packing" | "concierge";
@@ -432,6 +433,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   const [showAddPin, setShowAddPin]             = useState(false);
   const [activeDay, setActiveDay]               = useState<number | null>(null);
   const [copied, setCopied]                     = useState(false);
+  const [showDeleteMenu, setShowDeleteMenu]     = useState(false);
 
   // Data load — allSettled so one missing table never blocks the rest
   useEffect(() => {
@@ -665,7 +667,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, position: "relative" }}>
           <button onClick={copyShareLink} className="mxj-btn mxj-btn-ghost" style={{ padding: "6px 12px", fontSize: 11 }}>
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square">
               <rect x="2" y="5" width="9" height="9" /><path d="M5 5V3h8v8h-2" />
@@ -679,6 +681,25 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
           >
             + Add stop
           </button>
+          {/* ⋯ overflow menu */}
+          <button
+            onClick={() => setShowDeleteMenu(p => !p)}
+            className="mxj-btn mxj-btn-ghost"
+            style={{ padding: "6px 10px", fontSize: 14, lineHeight: 1 }}
+            title="More options"
+          >
+            ···
+          </button>
+          {showDeleteMenu && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 6px)", right: 0,
+              background: "var(--mxj-surface)", border: "1px solid var(--mxj-ink)",
+              padding: "12px 16px", zIndex: 30, minWidth: 180,
+              display: "flex", flexDirection: "column", gap: 8,
+            }}>
+              <DeleteTripButton tripId={trip.id} />
+            </div>
+          )}
         </div>
       </div>
 
