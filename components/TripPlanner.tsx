@@ -23,7 +23,7 @@ import {
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  supabase, addLocation, deleteLocation, reorderLocations, upsertDayNote,
+  supabase, addLocation, deleteLocation, updateLocation, reorderLocations, upsertDayNote,
   addReservation, updateReservation, deleteReservation,
   addBudgetItem, deleteBudgetItem,
   addPackingItem, updatePackingItem, deletePackingItem,
@@ -40,6 +40,7 @@ import InfoCard from "./InfoCard";
 import StreetViewPortal from "./StreetViewPortal";
 import TravelConcierge from "./TravelConcierge";
 import Logo from "./Logo";
+import { computeDayTimeline, formatMinutes, type StopTiming } from "@/lib/timeline";
 
 type ActiveTab = "map" | "reservations" | "budget" | "packing";
 
@@ -339,6 +340,8 @@ export default function TripPlanner({
         const dayLocs = byDay[day];
         const dayIdx = days.indexOf(day);
         const dayColor = DAY_PALETTES[dayIdx % DAY_PALETTES.length];
+        const timings = computeDayTimeline(dayLocs);
+        const timingById = Object.fromEntries(timings.map((t) => [t.locationId, t]));
         return (
           <DayDropZone key={day} dayNumber={day}>
             <div style={{ marginBottom: 14 }}>
@@ -365,16 +368,26 @@ export default function TripPlanner({
               {/* Stops */}
               <div style={{ paddingLeft: 4 }}>
                 <SortableContext items={dayLocs.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-                  {dayLocs.map((loc) => (
-                    <SortableStop
-                      key={loc.id}
-                      loc={loc}
-                      isActive={activeLocation?.id === loc.id}
-                      isDragging={activeDragId === loc.id}
-                      onMarkerClick={handleMarkerClick}
-                      onDelete={handleDelete}
-                    />
-                  ))}
+                  {dayLocs.map((loc, idx) => {
+                    const timing = timingById[loc.id];
+                    const nextTiming = idx < dayLocs.length - 1 ? timingById[dayLocs[idx + 1].id] : null;
+                    return (
+                      <SortableStop
+                        key={loc.id}
+                        loc={loc}
+                        timing={timing}
+                        isActive={activeLocation?.id === loc.id}
+                        isDragging={activeDragId === loc.id}
+                        onMarkerClick={handleMarkerClick}
+                        onDelete={handleDelete}
+                        onUpdate={async (updates) => {
+                          await updateLocation(loc.id, updates);
+                          setLocations((prev) => prev.map((l) => l.id === loc.id ? { ...l, ...updates } : l));
+                        }}
+                        travelToNextMin={nextTiming ? timing?.travelToNextMin : undefined}
+                      />
+                    );
+                  })}
                 </SortableContext>
 
                 {/* Add stop ghost button */}
@@ -877,18 +890,24 @@ function DayNoteField({
 
 // ── Sortable stop row ──
 function SortableStop({
-  loc, isActive, isDragging, onMarkerClick, onDelete,
+  loc, timing, travelToNextMin, isActive, isDragging, onMarkerClick, onDelete, onUpdate,
 }: {
   loc: TripLocation;
+  timing?: StopTiming;
+  travelToNextMin?: number;
   isActive: boolean;
   isDragging: boolean;
   onMarkerClick: (loc: TripLocation) => void;
   onDelete: (id: string) => void;
+  onUpdate: (updates: Partial<Pick<TripLocation, "duration_minutes" | "arrival_time">>) => Promise<void>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: loc.id,
     data: { dayNumber: loc.day_number },
   });
+  const [editingTime, setEditingTime] = useState(false);
+  const [draftDuration, setDraftDuration] = useState(loc.duration_minutes != null ? String(loc.duration_minutes) : "");
+  const [draftAnchor, setDraftAnchor] = useState(loc.arrival_time ?? "");
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -899,54 +918,131 @@ function SortableStop({
     opacity: isDragging ? 0.35 : 1,
   };
 
+  const arrLabel = timing?.arrivalMin != null ? formatMinutes(timing.arrivalMin) : null;
+  const depLabel = timing?.departureMin != null ? formatMinutes(timing.departureMin) : null;
+
+  async function saveTime(e: React.MouseEvent) {
+    e.stopPropagation();
+    const dur = draftDuration.trim() ? parseInt(draftDuration) : null;
+    const anchor = draftAnchor.trim() || null;
+    await onUpdate({ duration_minutes: isNaN(dur as number) ? null : dur, arrival_time: anchor });
+    setEditingTime(false);
+  }
+
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`mxj-stop ${isActive ? "is-active" : ""}`}
-      onClick={() => !isDragging && onMarkerClick(loc)}
-    >
-      <span
-        className="mxj-drag-handle"
-        {...attributes}
-        {...listeners}
-        onClick={(e) => e.stopPropagation()}
-        title="Drag to reorder"
+    <>
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`mxj-stop ${isActive ? "is-active" : ""}`}
+        onClick={() => !isDragging && onMarkerClick(loc)}
       >
-        ⠿
-      </span>
-      <span
-        className="mxj-stop-marker"
-        style={{ background: CATEGORY_META[loc.category].color, marginTop: 7, flexShrink: 0 }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {loc.name}
-          </span>
-          <span className="mxj-mono" style={{ fontSize: 9, flexShrink: 0 }}>
-            {CATEGORY_META[loc.category].glyph} {CATEGORY_META[loc.category].label}
+        <span
+          className="mxj-drag-handle"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          title="Drag to reorder"
+        >
+          ⠿
+        </span>
+        <span
+          className="mxj-stop-marker"
+          style={{ background: CATEGORY_META[loc.category].color, marginTop: 7, flexShrink: 0 }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {loc.name}
+            </span>
+            <span className="mxj-mono" style={{ fontSize: 9, flexShrink: 0 }}>
+              {CATEGORY_META[loc.category].glyph} {CATEGORY_META[loc.category].label}
+            </span>
+          </div>
+          {loc.description && (
+            <div className="mxj-mono" style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {loc.description}
+            </div>
+          )}
+          {/* Time row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
+            {arrLabel && (
+              <span className="mxj-mono" style={{ fontSize: 10, color: "var(--mxj-accent)" }}>{arrLabel}</span>
+            )}
+            {arrLabel && depLabel && (
+              <span className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-faint)" }}>→</span>
+            )}
+            {depLabel && (
+              <span className="mxj-mono" style={{ fontSize: 10, color: "var(--mxj-muted)" }}>{depLabel}</span>
+            )}
+            {loc.duration_minutes != null && (
+              <span className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-faint)" }}>
+                ({loc.duration_minutes < 60
+                  ? `${loc.duration_minutes}m`
+                  : `${Math.floor(loc.duration_minutes / 60)}h${loc.duration_minutes % 60 ? `${loc.duration_minutes % 60}m` : ""}`})
+              </span>
+            )}
+            <button
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mxj-faint)", fontSize: 10, padding: "0 2px", fontFamily: "var(--mxj-mono)" }}
+              onClick={(e) => { e.stopPropagation(); setEditingTime((v) => !v); }}
+              title="Set time / duration"
+            >
+              {loc.duration_minutes != null || loc.arrival_time ? "✎" : "+ time"}
+            </button>
+          </div>
+          {editingTime && (
+            <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <label className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-muted)", width: 62 }}>Arrive at</label>
+                <input
+                  className="mxj-input"
+                  type="time"
+                  value={draftAnchor}
+                  onChange={(e) => setDraftAnchor(e.target.value)}
+                  style={{ flex: 1, padding: "3px 6px", fontSize: 11 }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <label className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-muted)", width: 62 }}>Duration</label>
+                <input
+                  className="mxj-input"
+                  type="number"
+                  min="1"
+                  placeholder="minutes"
+                  value={draftDuration}
+                  onChange={(e) => setDraftDuration(e.target.value)}
+                  style={{ flex: 1, padding: "3px 6px", fontSize: 11 }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="mxj-btn" style={{ flex: 1, padding: "4px 0", fontSize: 10 }} onClick={saveTime}>Save</button>
+                <button className="mxj-btn mxj-btn-ghost" style={{ flex: 1, padding: "4px 0", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); setEditingTime(false); }}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(loc.id); }}
+          style={{
+            background: "none", border: "none", color: "var(--mxj-faint)",
+            cursor: "pointer", padding: "4px 6px", flexShrink: 0,
+            display: "flex", alignItems: "center",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#e07070")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mxj-faint)")}
+        >
+          {Ico.trash}
+        </button>
+      </div>
+      {/* Travel time connector */}
+      {travelToNextMin !== undefined && travelToNextMin > 0 && (
+        <div style={{ paddingLeft: 44, marginBottom: 2 }}>
+          <span className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-faint)" }}>
+            🚶 {travelToNextMin < 60 ? `${travelToNextMin} min walk` : `${Math.round(travelToNextMin / 60 * 10) / 10} h walk`}
           </span>
         </div>
-        {loc.description && (
-          <div className="mxj-mono" style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {loc.description}
-          </div>
-        )}
-      </div>
-      <button
-        onClick={(e) => { e.stopPropagation(); onDelete(loc.id); }}
-        style={{
-          background: "none", border: "none", color: "var(--mxj-faint)",
-          cursor: "pointer", padding: "4px 6px", flexShrink: 0,
-          display: "flex", alignItems: "center",
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.color = "#e07070")}
-        onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mxj-faint)")}
-      >
-        {Ico.trash}
-      </button>
-    </div>
+      )}
+    </>
   );
 }
 
@@ -1033,12 +1129,23 @@ function AddPinPanel({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       el.addEventListener("gmp-placeselect", async (e: any) => {
         try {
-          // New Places API (weekly): event has placePrediction, not place
-          const place = e.placePrediction ? e.placePrediction.toPlace() : e.place;
+          // Places API (New): event.placePrediction → .toPlace() → fetchFields
+          const prediction = e.placePrediction ?? e.place;
+          const place = typeof prediction?.toPlace === "function" ? prediction.toPlace() : prediction;
           await place.fetchFields({ fields: ["displayName", "location"] });
+
           const name: string = place.displayName ?? "";
-          const lat = place.location?.lat?.() ?? place.location?.latitude;
-          const lng = place.location?.lng?.() ?? place.location?.longitude;
+          // location is google.maps.LatLng in Places API (New)
+          const loc = place.location;
+          const lat: number = typeof loc?.lat === "function" ? loc.lat() : loc?.latitude ?? loc?.lat;
+          const lng: number = typeof loc?.lng === "function" ? loc.lng() : loc?.longitude ?? loc?.lng;
+
+          console.log("[PlaceSelect] name:", name, "lat:", lat, "lng:", lng);
+
+          if (!isFinite(lat) || !isFinite(lng)) {
+            console.error("[PlaceSelect] invalid coords", { loc, lat, lng });
+            return;
+          }
           onChangeRef.current("name", name);
           onChangeRef.current("latitude", String(lat));
           onChangeRef.current("longitude", String(lng));

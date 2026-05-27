@@ -34,8 +34,10 @@ create table if not exists trip_locations (
   description   text,
   -- Either a social URL (TikTok/Instagram) or a Supabase Storage path
   media_url     text,
-  order_index   integer     not null default 0,
-  created_at    timestamptz default now()
+  order_index        integer     not null default 0,
+  duration_minutes   integer,
+  arrival_time       text,       -- "HH:MM" anchor; null = inferred
+  created_at         timestamptz default now()
 );
 
 create index if not exists trip_locations_trip_id_idx

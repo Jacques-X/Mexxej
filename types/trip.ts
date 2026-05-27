@@ -34,6 +34,8 @@ export interface TripLocation {
   description?: string;
   media_url?: string;
   order_index: number;
+  duration_minutes?: number | null;
+  arrival_time?: string | null;
   created_at: string;
 }
 

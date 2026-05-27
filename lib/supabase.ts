@@ -91,6 +91,14 @@ export async function upsertDayNote(
   if (error) throw new Error(error.message);
 }
 
+export async function updateLocation(
+  id: string,
+  updates: Partial<Pick<TripLocation, "duration_minutes" | "arrival_time" | "name" | "description" | "category">>
+): Promise<void> {
+  const { error } = await supabase.from("trip_locations").update(updates).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 export async function deleteLocation(id: string): Promise<void> {
   const { error } = await supabase.from("trip_locations").delete().eq("id", id);
   if (error) throw new Error(error.message);
