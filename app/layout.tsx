@@ -1,17 +1,23 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Serif, JetBrains_Mono } from "next/font/google";
+import { EB_Garamond, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const instrumentSerif = Instrument_Serif({
-  weight: ["400"],
+const ebGaramond = EB_Garamond({
+  weight: ["400", "500", "600"],
   style: ["normal", "italic"],
   subsets: ["latin"],
   variable: "--font-serif",
   display: "swap",
 });
 
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
+
 const jetbrainsMono = JetBrains_Mono({
-  weight: ["400", "500", "600"],
+  weight: ["400", "500"],
   subsets: ["latin"],
   variable: "--font-mono",
   display: "swap",
@@ -37,13 +43,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`h-full ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
-      style={
-        {
-          "--mxj-serif": `var(--font-serif), 'Cormorant Garamond', 'Times New Roman', serif`,
-          "--mxj-mono": `var(--font-mono), 'IBM Plex Mono', monospace`,
-        } as React.CSSProperties
-      }
+      className={`h-full ${ebGaramond.variable} ${inter.variable} ${jetbrainsMono.variable}`}
     >
       <body className="h-full">{children}</body>
     </html>

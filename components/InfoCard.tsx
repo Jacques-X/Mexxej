@@ -49,10 +49,9 @@ export default function InfoCard({ location, onClose, onStreetView, onDelete }: 
             position: "absolute", top: 12, right: 12, zIndex: 2,
             width: 34, height: 34, borderRadius: "50%",
             display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(16,22,30,0.7)",
-            backdropFilter: "blur(12px)",
+            background: "var(--mxj-surface)",
             border: "1px solid var(--mxj-stroke)",
-            cursor: "pointer", color: "var(--mxj-ink)",
+            cursor: "pointer", color: "var(--mxj-ink)", boxShadow: "0 2px 8px oklch(0% 0 0 / 0.14)",
           }}
           aria-label="Close"
         >

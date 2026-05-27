@@ -89,8 +89,7 @@ export default function StreetViewPortal({ location, onClose }: Props) {
           style={{
             pointerEvents: "auto",
             display: "flex", alignItems: "center", gap: 8,
-            background: "rgba(20, 28, 38, 0.55)",
-            backdropFilter: "blur(24px)",
+            background: "oklch(17% 0.022 240)",
             borderRadius: 12, padding: "8px 16px",
             fontSize: 14, fontWeight: 600,
             color: "var(--mxj-ink)",
@@ -98,19 +97,18 @@ export default function StreetViewPortal({ location, onClose }: Props) {
             cursor: "pointer",
             transition: "background 0.15s"
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(20, 28, 38, 0.7)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(20, 28, 38, 0.55)")}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "oklch(22% 0.022 240)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "oklch(17% 0.022 240)")}
         >
           <ArrowLeft style={{ width: 16, height: 16 }} />
           Return to Sky
         </button>
         <div style={{
           pointerEvents: "auto",
-          background: "rgba(20, 28, 38, 0.55)",
-          backdropFilter: "blur(24px)",
+          background: "oklch(17% 0.022 240)",
           borderRadius: 12, padding: "8px 16px",
           fontSize: 14,
-          color: "rgba(246, 239, 228, 0.8)",
+          color: "oklch(80% 0.01 78)",
           border: "1px solid var(--mxj-stroke)"
         }}>
           Street View — <span style={{ fontWeight: 500, color: "var(--mxj-ink)" }}>{location.name}</span>

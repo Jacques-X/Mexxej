@@ -2,37 +2,65 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Mexxej design tokens ──────────────────────────────────────
-   Glassmorphic, over-the-map aesthetic. Warm Tuscan accents on
-   cool dusk-satellite background.                               */
+/* ── Mexxej design tokens v2 ───────────────────────────────────
+   Light mode. Warm parchment surfaces, terracotta accent,
+   EB Garamond display type. Solid panels — no glassmorphism.
+   OKLCH throughout. Panels float clean over the dark map.      */
+
 :root {
-  --mxj-serif: 'Instrument Serif', 'Cormorant Garamond', 'Times New Roman', serif;
-  --mxj-mono: 'JetBrains Mono', 'IBM Plex Mono', monospace;
-  --mxj-sans: -apple-system, BlinkMacSystemFont, 'Geist', 'Helvetica Neue', sans-serif;
+  --mxj-serif: var(--font-serif, 'EB Garamond', 'Georgia', serif);
+  --mxj-mono:  var(--font-mono, 'JetBrains Mono', 'Fira Mono', monospace);
+  --mxj-sans:  var(--font-sans, -apple-system, BlinkMacSystemFont, 'Inter', 'Helvetica Neue', sans-serif);
 
-  --mxj-bg: #0e1620;
-  --mxj-ink: #f6efe4;
-  --mxj-muted: rgba(246, 239, 228, 0.62);
-  --mxj-faint: rgba(246, 239, 228, 0.32);
+  /* ── Palette ─────────────────────────────────────────────── */
 
-  --mxj-glass: rgba(20, 28, 38, 0.55);
-  --mxj-glass-strong: rgba(16, 22, 30, 0.78);
-  --mxj-glass-light: rgba(246, 239, 228, 0.08);
-  --mxj-stroke: rgba(246, 239, 228, 0.14);
-  --mxj-stroke-strong: rgba(246, 239, 228, 0.22);
+  /* Surfaces */
+  --mxj-bg:           oklch(97.5% 0.009 78);    /* warm parchment page bg  */
+  --mxj-surface:      oklch(99.5% 0.004 80);    /* near-white panel        */
+  --mxj-surface-2:    oklch(95.5% 0.010 76);    /* slightly recessed area  */
+  --mxj-surface-3:    oklch(93%   0.012 74);    /* deeper recessed         */
 
-  --mxj-accent: #e88c64;       /* terracotta */
-  --mxj-accent-soft: #d8a478;  /* sand */
-  --mxj-cool: #88a8c0;         /* river blue */
-  --mxj-warm: #c8b894;         /* travertine */
+  /* Text */
+  --mxj-ink:          oklch(22%   0.024 52);    /* very dark warm brown    */
+  --mxj-muted:        oklch(50%   0.018 52);    /* warm mid-gray           */
+  --mxj-faint:        oklch(72%   0.011 60);    /* light warm gray         */
 
-  --mxj-r-sm: 6px;
-  --mxj-r-md: 12px;
-  --mxj-r-lg: 18px;
-  --mxj-r-xl: 28px;
+  /* Accent — terracotta */
+  --mxj-accent:       oklch(62%   0.17  42);    /* terracotta              */
+  --mxj-accent-hover: oklch(57%   0.17  42);    /* terracotta darkened     */
+  --mxj-accent-deep:  oklch(48%   0.16  40);    /* terracotta, text-safe   */
+  --mxj-accent-bg:    oklch(96.5% 0.032 52);    /* terracotta tint         */
+  --mxj-accent-border:oklch(82%   0.10  46);    /* terracotta border       */
 
-  /* Legacy — keep for mobile layout utilities */
-  --nav-h: 0px; /* No tab bar in new design; sheets float above map */
+  /* Secondary palette */
+  --mxj-cool:         oklch(57%   0.10 228);    /* steel blue              */
+  --mxj-warm:         oklch(76%   0.07  75);    /* travertine              */
+
+  /* Semantic */
+  --mxj-success:      oklch(55%   0.13 150);    /* green                   */
+  --mxj-danger:       oklch(58%   0.17  25);    /* red                     */
+  --mxj-danger-bg:    oklch(97%   0.03  25);    /* red tint                */
+  --mxj-danger-border:oklch(80%   0.10  28);    /* red border              */
+  --mxj-danger-text:  oklch(50%   0.18  25);    /* red text                */
+
+  /* Borders */
+  --mxj-stroke:       oklch(90%   0.011 78);    /* warm light border       */
+  --mxj-stroke-strong:oklch(82%   0.014 76);    /* stronger border         */
+
+  /* Aliases used in components */
+  --mxj-glass:        var(--mxj-surface);       /* legacy compat           */
+  --mxj-glass-bg:     var(--mxj-surface-2);     /* legacy compat           */
+  --mxj-glass-strong: var(--mxj-surface);       /* legacy compat           */
+  --mxj-glass-light:  var(--mxj-surface-2);     /* legacy compat           */
+
+  /* Radii */
+  --mxj-r-sm:   6px;
+  --mxj-r-md:  10px;
+  --mxj-r-lg:  16px;
+  --mxj-r-xl:  24px;
+
+  /* Legacy — kept for mobile layout utilities */
+  --nav-h: 0px;
 }
 
 * {
@@ -50,13 +78,13 @@ body {
   overflow: hidden;
 }
 
-/* ── Viewport ──────────────────────────────────────────────── */
+/* ── Viewport ───────────────────────────────────────────── */
 .h-screen-safe {
   height: 100vh;
   height: 100dvh;
 }
 
-/* ── Safe-area helpers ─────────────────────────────────────── */
+/* ── Safe-area helpers ──────────────────────────────────── */
 .safe-top { padding-top:    env(safe-area-inset-top,    0px); }
 .safe-bot { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
@@ -64,47 +92,66 @@ body {
   bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
 }
 
-/* ── Glass tiers ───────────────────────────────────────────── */
+/* ── Panel tiers — solid, no glassmorphism ──────────────── */
+
+/* Standard panel: floats on parchment bg OR over dark map  */
 .mxj-glass {
-  background: var(--mxj-glass);
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  background: var(--mxj-surface);
   border: 1px solid var(--mxj-stroke);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 8px 28px rgba(0, 0, 0, 0.35);
+    0 1px 3px oklch(22% 0.024 52 / 0.06),
+    0 4px 18px oklch(22% 0.024 52 / 0.07);
 }
 
+/* Strong panel: modals, sheets, significant overlays       */
 .mxj-glass-strong {
-  background: var(--mxj-glass-strong);
-  backdrop-filter: blur(32px) saturate(150%);
-  -webkit-backdrop-filter: blur(32px) saturate(150%);
+  background: var(--mxj-surface);
+  border: 1px solid var(--mxj-stroke);
+  box-shadow:
+    0 4px 32px oklch(0% 0 0 / 0.24),
+    0 1px 8px  oklch(0% 0 0 / 0.10);
+}
+
+/* Subtle fill (used as "light glass" previously)          */
+.mxj-glass-light {
+  background: var(--mxj-surface-2);
   border: 1px solid var(--mxj-stroke);
 }
 
-/* ── Typography ────────────────────────────────────────────── */
+/* Card: lifts on hover                                     */
+.mxj-card {
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+.mxj-card:hover {
+  box-shadow:
+    0 6px 28px oklch(22% 0.024 52 / 0.12),
+    0 2px 8px  oklch(22% 0.024 52 / 0.08);
+  transform: translateY(-1px);
+}
+
+/* ── Typography ─────────────────────────────────────────── */
 .mxj-serif {
   font-family: var(--mxj-serif);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
   font-weight: 400;
 }
 
 .mxj-mono {
   font-family: var(--mxj-mono);
   font-size: 10px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--mxj-muted);
 }
 
-/* ── Buttons ───────────────────────────────────────────────── */
+/* ── Buttons ─────────────────────────────────────────────── */
 .mxj-btn {
   font-family: var(--mxj-sans);
   font-size: 13px;
   font-weight: 500;
   letter-spacing: -0.01em;
-  border: 1px solid var(--mxj-stroke);
-  background: var(--mxj-glass-light);
+  border: 1px solid var(--mxj-stroke-strong);
+  background: var(--mxj-surface);
   color: var(--mxj-ink);
   padding: 9px 14px;
   border-radius: 999px;
@@ -112,55 +159,72 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
   -webkit-appearance: none;
+  box-shadow: 0 1px 3px oklch(22% 0.024 52 / 0.07);
 }
-.mxj-btn:hover { background: rgba(246, 239, 228, 0.14); border-color: var(--mxj-stroke-strong); }
+.mxj-btn:hover {
+  background: var(--mxj-surface-2);
+  border-color: var(--mxj-stroke-strong);
+  box-shadow: 0 2px 6px oklch(22% 0.024 52 / 0.11);
+}
 
 .mxj-btn-accent {
   background: var(--mxj-accent);
-  color: #1a1208;
+  color: oklch(99% 0.004 80);
   border-color: transparent;
   font-weight: 600;
+  box-shadow: 0 2px 10px oklch(62% 0.17 42 / 0.38);
 }
-.mxj-btn-accent:hover { background: #f29c74; }
+.mxj-btn-accent:hover {
+  background: var(--mxj-accent-hover);
+  box-shadow: 0 3px 14px oklch(62% 0.17 42 / 0.44);
+}
 
 .mxj-btn-ghost {
   background: transparent;
-  border-color: var(--mxj-stroke);
+  border-color: var(--mxj-stroke-strong);
+  box-shadow: none;
+}
+.mxj-btn-ghost:hover {
+  background: var(--mxj-surface-2);
 }
 
-/* ── Input ─────────────────────────────────────────────────── */
+/* ── Input ──────────────────────────────────────────────── */
 .mxj-input {
   font-family: var(--mxj-sans);
   font-size: 14px;
-  background: rgba(8, 12, 18, 0.5);
-  border: 1px solid var(--mxj-stroke);
+  background: var(--mxj-surface);
+  border: 1px solid var(--mxj-stroke-strong);
   color: var(--mxj-ink);
   padding: 10px 14px;
   border-radius: var(--mxj-r-md);
   width: 100%;
   outline: none;
   -webkit-appearance: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
 .mxj-input::placeholder { color: var(--mxj-faint); }
-.mxj-input:focus { border-color: var(--mxj-accent); }
+.mxj-input:focus {
+  border-color: var(--mxj-accent);
+  box-shadow: 0 0 0 3px oklch(62% 0.17 42 / 0.12);
+}
 
-/* ── Chip ──────────────────────────────────────────────────── */
+/* ── Chip ───────────────────────────────────────────────── */
 .mxj-chip {
-  font-family: var(--mxj-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgba(246, 239, 228, 0.1);
-  color: var(--mxj-ink);
+  font-family: var(--mxj-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--mxj-surface-2);
+  color: var(--mxj-muted);
   border: 1px solid var(--mxj-stroke);
   display: inline-block;
 }
 
-/* ── Divider ───────────────────────────────────────────────── */
+/* ── Divider ────────────────────────────────────────────── */
 .mxj-divider {
   height: 1px;
   background: var(--mxj-stroke);
@@ -168,22 +232,21 @@ body {
   margin: 0;
 }
 
-/* ── Photo placeholder ─────────────────────────────────────── */
+/* ── Photo placeholder ──────────────────────────────────── */
 .mxj-photo {
   background:
     repeating-linear-gradient(135deg,
-      rgba(246, 239, 228, 0.04) 0 4px,
-      rgba(246, 239, 228, 0.02) 4px 9px),
-    linear-gradient(140deg, #2a3845 0%, #1a2531 100%);
+      oklch(22% 0.024 52 / 0.035) 0 4px,
+      transparent 4px 9px),
+    oklch(95.5% 0.010 76);
   border: 1px solid var(--mxj-stroke);
   display: flex;
   align-items: flex-end;
   padding: 10px 12px;
-  font-family: var(--mxj-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--mxj-muted);
+  font-family: var(--mxj-sans);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--mxj-faint);
   border-radius: var(--mxj-r-md);
   overflow: hidden;
   position: relative;
@@ -192,33 +255,35 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 30% 30%, rgba(216, 164, 120, 0.18), transparent 60%);
+  background: radial-gradient(circle at 25% 30%,
+    oklch(62% 0.17 42 / 0.06), transparent 55%);
   pointer-events: none;
 }
 
-/* ── Stop row ──────────────────────────────────────────────── */
+/* ── Stop row ───────────────────────────────────────────── */
 .mxj-stop {
   display: flex;
   gap: 12px;
   padding: 10px 0;
   cursor: pointer;
   border-radius: 8px;
-  transition: background 0.15s;
+  transition: background 0.12s;
 }
-.mxj-stop:hover { background: rgba(246, 239, 228, 0.04); }
-.mxj-stop.is-active { background: rgba(232, 140, 100, 0.08); }
+.mxj-stop:hover       { background: var(--mxj-surface-2); }
+.mxj-stop.is-active   { background: var(--mxj-accent-bg); }
 
 .mxj-stop.is-dragging {
   opacity: 0.4;
-  background: rgba(232, 140, 100, 0.06);
+  background: var(--mxj-accent-bg);
 }
 .mxj-stop.is-drag-over {
-  background: rgba(136, 168, 192, 0.1);
+  background: oklch(95% 0.04 225 / 0.18);
   border-radius: 8px;
 }
+
 .mxj-drag-handle {
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.12s;
   cursor: grab;
   color: var(--mxj-faint);
   display: flex;
@@ -237,13 +302,13 @@ body {
   height: 8px;
   border-radius: 50%;
   flex: 0 0 8px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1.5px solid oklch(22% 0.024 52 / 0.18);
 }
 
-/* ── Pill tabs ─────────────────────────────────────────────── */
+/* ── Pill tabs ──────────────────────────────────────────── */
 .mxj-pill-tabs {
   display: inline-flex;
-  background: rgba(8, 12, 18, 0.5);
+  background: var(--mxj-surface-2);
   border: 1px solid var(--mxj-stroke);
   border-radius: 999px;
   padding: 3px;
@@ -259,22 +324,23 @@ body {
   background: transparent;
   color: var(--mxj-muted);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.12s;
   -webkit-appearance: none;
 }
 .mxj-pill-tab.is-active {
-  background: rgba(246, 239, 228, 0.12);
+  background: var(--mxj-surface);
   color: var(--mxj-ink);
+  box-shadow: 0 1px 4px oklch(22% 0.024 52 / 0.10);
 }
 
-/* ── Pulse animation (live presence dot) ───────────────────── */
+/* ── Pulse animation ────────────────────────────────────── */
 @keyframes mxj-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50%       { opacity: 0.4; }
 }
 .mxj-pulse { animation: mxj-pulse 1.6s ease-in-out infinite; }
 
-/* ── Sheet drag handle ─────────────────────────────────────── */
+/* ── Sheet drag handle ──────────────────────────────────── */
 .sheet-handle {
   width: 2.5rem;
   height: 0.25rem;
@@ -284,37 +350,37 @@ body {
   flex-shrink: 0;
 }
 
-/* ── Home nav — responsive padding ────────────────────────── */
+/* ── Page nav ── responsive padding ────────────────────── */
 .mxj-page-nav {
-  padding: 18px 16px;
+  padding: 20px 18px;
 }
 @media (min-width: 640px) {
   .mxj-page-nav {
-    padding: 24px 36px;
+    padding: 26px 40px;
   }
 }
 
-/* ── Page column — responsive horizontal padding ───────────── */
+/* ── Page column ────────────────────────────────────────── */
 .mxj-page-col {
-  padding: 0 14px 64px;
+  padding: 0 16px 72px;
 }
 @media (min-width: 640px) {
   .mxj-page-col {
-    padding: 0 24px 80px;
+    padding: 0 40px 80px;
   }
 }
 
-/* ── Hero card — responsive padding ───────────────────────── */
+/* ── Hero card — responsive padding ────────────────────── */
 .mxj-hero-card {
-  padding: 22px 18px;
+  padding: 24px 20px;
 }
 @media (min-width: 640px) {
   .mxj-hero-card {
-    padding: 36px 40px;
+    padding: 44px 52px;
   }
 }
 
-/* ── Cesium — hide all default toolbar UI, we use our own ── */
+/* ── Cesium — hide default toolbar UI ─────────────────── */
 .cesium-viewer-toolbar,
 .cesium-viewer-animationContainer,
 .cesium-viewer-timelineContainer,
@@ -334,7 +400,7 @@ body {
   outline: none;
 }
 
-/* ── Scrollbars ────────────────────────────────────────────── */
+/* ── Scrollbars ─────────────────────────────────────────── */
 .scrollbar-thin::-webkit-scrollbar       { width: 4px; }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 .scrollbar-thin::-webkit-scrollbar-thumb {
@@ -347,14 +413,17 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ── Animations ────────────────────────────────────────────── */
+/* ── Animations ─────────────────────────────────────────── */
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
-.animate-fade-in  { animation: fadeIn  0.25s ease-out; }
-.animate-slide-up { animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+.animate-fade-in  { animation: fadeIn  0.2s  ease-out; }
+.animate-slide-up { animation: slideUp 0.26s cubic-bezier(0.16, 1, 0.3, 1); }
 
-/* ── Concierge panel — mobile full-screen, desktop flows in flex overlay ─── */
+/* ── Concierge panel ─────────────────────────────────────── */
 .mxj-concierge-panel {
   position: absolute;
   z-index: 30;
@@ -368,18 +437,18 @@ body {
     inset: auto;
     width: 420px;
     height: 560px;
-    border-radius: 18px;
+    border-radius: var(--mxj-r-xl);
   }
 }
 
-/* ── Info card — mobile bottom sheet, desktop flows in flex overlay ──── */
+/* ── Info card — bottom sheet mobile, floating desktop ─── */
 .mxj-info-card {
   position: absolute;
   z-index: 30;
   left: 0;
   right: 0;
   bottom: 0;
-  border-radius: 24px 24px 0 0;
+  border-radius: 22px 22px 0 0;
   overflow: hidden;
   max-height: 85vh;
   overflow-y: auto;
@@ -392,23 +461,23 @@ body {
     bottom: auto;
     width: 440px;
     max-width: calc(100vw - 48px);
-    border-radius: 18px;
+    border-radius: var(--mxj-r-lg);
     max-height: 80vh;
     overflow-y: auto;
   }
 }
 
-/* ── Sheet/modal — bottom sheet on mobile, rounded modal on desktop ── */
+/* ── Sheet/modal ────────────────────────────────────────── */
 .mxj-sheet-modal {
-  border-radius: 24px 24px 0 0;
+  border-radius: 22px 22px 0 0;
 }
 @media (min-width: 768px) {
   .mxj-sheet-modal {
-    border-radius: 18px;
+    border-radius: var(--mxj-r-lg);
   }
 }
 
-/* ── PlaceAutocompleteElement (new Places API web component) ── */
+/* ── Google Places Autocomplete web component ─────────── */
 .mxj-place-ac {
   width: 100%;
 }
@@ -417,25 +486,24 @@ gmp-place-autocomplete {
   display: block;
   width: 100%;
   --gmp-filled-input-border-radius: var(--mxj-r-md);
-  --gmp-filled-input-background-color: rgba(8, 12, 18, 0.5);
+  --gmp-filled-input-background-color: var(--mxj-surface);
   --gmp-filled-input-text-color: var(--mxj-ink);
   --gmp-filled-input-placeholder-text-color: var(--mxj-faint);
-  --gmp-filled-input-border-color: var(--mxj-stroke);
+  --gmp-filled-input-border-color: var(--mxj-stroke-strong);
   --gmp-filled-input-focus-border-color: var(--mxj-accent);
   font-family: var(--mxj-sans);
   font-size: 14px;
 }
 
-/* ── Autocomplete dropdown (Google Places) ─────────────────── */
+/* ── Autocomplete dropdown (classic Places API) ─────────── */
 .pac-container {
-  background: var(--mxj-glass-strong) !important;
-  backdrop-filter: blur(32px) !important;
-  -webkit-backdrop-filter: blur(32px) !important;
-  border: 1px solid var(--mxj-stroke) !important;
+  background: var(--mxj-surface) !important;
+  border: 1px solid var(--mxj-stroke-strong) !important;
   border-radius: var(--mxj-r-md) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 8px 32px oklch(22% 0.024 52 / 0.14) !important;
   font-family: var(--mxj-sans) !important;
   margin-top: 4px !important;
+  backdrop-filter: none !important;
 }
 .pac-item {
   color: var(--mxj-muted) !important;
@@ -445,7 +513,8 @@ gmp-place-autocomplete {
   cursor: pointer !important;
 }
 .pac-item:first-child { border-top: none !important; }
-.pac-item:hover, .pac-item-selected { background: rgba(246, 239, 228, 0.07) !important; }
-.pac-item-query { color: var(--mxj-ink) !important; font-size: 13px !important; }
-.pac-matched { font-weight: 600 !important; }
-.pac-icon { display: none !important; }
+.pac-item:hover,
+.pac-item-selected   { background: var(--mxj-surface-2) !important; }
+.pac-item-query      { color: var(--mxj-ink) !important; font-size: 13px !important; }
+.pac-matched         { font-weight: 600 !important; }
+.pac-icon            { display: none !important; }

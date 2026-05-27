@@ -366,7 +366,7 @@ export default function TripPlanner({
                         title={TRANSPORT_META[mode].label}
                         onClick={() => setDayTransportModes((p) => ({ ...p, [day]: mode }))}
                         style={{
-                          background: transportMode === mode ? "var(--mxj-glass-bg)" : "none",
+                          background: transportMode === mode ? "var(--mxj-surface-2)" : "none",
                           border: "none", cursor: "pointer",
                           fontSize: 13, padding: "2px 3px", borderRadius: 4,
                           opacity: transportMode === mode ? 1 : 0.3,
@@ -843,12 +843,12 @@ export default function TripPlanner({
           position: "absolute", bottom: 80, left: "50%", transform: "translateX(-50%)",
           zIndex: 50, borderRadius: 12, padding: "12px 20px",
           display: "flex", alignItems: "center", gap: 8,
-          background: "rgba(224, 112, 112, 0.15)",
-          border: "1px solid rgba(224, 112, 112, 0.4)",
+          background: "var(--mxj-danger-bg)",
+          border: "1px solid var(--mxj-danger-border)",
           whiteSpace: "nowrap",
         }}>
-          <span style={{ width: 6, height: 6, borderRadius: 3, background: "#e07070", flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: "#e07070" }}>{addError}</span>
+          <span style={{ width: 6, height: 6, borderRadius: 3, background: "var(--mxj-danger)", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: "var(--mxj-danger-text)" }}>{addError}</span>
         </div>
       )}
 
@@ -858,11 +858,11 @@ export default function TripPlanner({
           position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
           zIndex: 50, borderRadius: 12, padding: "12px 20px",
           display: "flex", alignItems: "center", gap: 8,
-          background: "rgba(224, 112, 112, 0.15)",
-          border: "1px solid rgba(224, 112, 112, 0.4)",
+          background: "var(--mxj-danger-bg)",
+          border: "1px solid var(--mxj-danger-border)",
         }}>
-          <span style={{ width: 6, height: 6, borderRadius: 3, background: "#e07070", flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: "#e07070" }}>{deleteError}</span>
+          <span style={{ width: 6, height: 6, borderRadius: 3, background: "var(--mxj-danger)", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: "var(--mxj-danger-text)" }}>{deleteError}</span>
         </div>
       )}
     </div>
@@ -1051,7 +1051,7 @@ function SortableStop({
             cursor: "pointer", padding: "4px 6px", flexShrink: 0,
             display: "flex", alignItems: "center",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#e07070")}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--mxj-danger-text)")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mxj-faint)")}
         >
           {Ico.trash}
@@ -1081,7 +1081,7 @@ function DayDropZone({ dayNumber, children }: { dayNumber: number; children: Rea
       style={{
         borderRadius: 8,
         transition: "background 0.15s",
-        background: isOver ? "rgba(136,168,192,0.07)" : "transparent",
+        background: isOver ? "oklch(95% 0.04 225 / 0.2)" : "transparent",
       }}
     >
       {children}
@@ -1111,7 +1111,7 @@ function IconCircle({
         display: "flex", alignItems: "center", justifyContent: "center",
         cursor: disabled ? "default" : "pointer",
         color: active ? "var(--mxj-accent)" : "var(--mxj-ink)",
-        border: "1px solid " + (active ? "rgba(232,140,100,0.6)" : "var(--mxj-stroke)"),
+        border: "1px solid " + (active ? "var(--mxj-accent-border)" : "var(--mxj-stroke)"),
         background: "none",
         opacity: disabled ? 0.5 : 1,
         flexShrink: 0,
@@ -1207,8 +1207,6 @@ function AddPinPanel({
         position: "absolute", inset: 0, zIndex: 40,
         justifyContent: "center",
         background: "rgba(0,0,0,0.55)",
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
       }}
       className="animate-fade-in flex items-end md:items-center"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
@@ -1244,7 +1242,7 @@ function AddPinPanel({
             <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Search place</span>
             <div ref={acContainerRef} className="mxj-place-ac" />
             {coordsLabel && (
-              <div style={{ marginTop: 6, fontSize: 11, color: "#7ec896", fontFamily: "var(--mxj-mono)", letterSpacing: "0.1em" }}>
+              <div style={{ marginTop: 6, fontSize: 11, color: "var(--mxj-success)", fontFamily: "var(--mxj-mono)", letterSpacing: "0.1em" }}>
                 ✓ {coordsLabel}
               </div>
             )}
