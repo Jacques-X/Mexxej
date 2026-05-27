@@ -42,18 +42,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   other:      "#9aa4b0",
 };
 
-const MAP_STYLES: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#1a2035" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8a9bc0" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#0e1620" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1828" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#253050" }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#1a2440" }] },
-  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#1e2d48" }] },
-  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#1e2d48" }] },
-  { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#1a2640" }] },
-  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#2e4060" }] },
-];
 
 // ─── Inner map controller (has access to map instance) ────────
 interface ControllerProps {
@@ -221,8 +209,11 @@ const Map3D = forwardRef<Map3DHandle, Props>(function Map3D(
         style={{ width: "100%", height: "100%" }}
         defaultCenter={resolvedCenter}
         defaultZoom={13}
-        mapTypeId="roadmap"
-        styles={MAP_STYLES}
+        mapTypeId="satellite"
+        styles={[
+          { featureType: "poi", stylers: [{ visibility: "off" }] },
+          { featureType: "transit", stylers: [{ visibility: "off" }] },
+        ]}
         disableDefaultUI
         gestureHandling="greedy"
         reuseMaps
