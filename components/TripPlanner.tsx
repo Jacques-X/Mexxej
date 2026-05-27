@@ -1133,12 +1133,19 @@ function AddPinPanel({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       el.addEventListener("gmp-placeselect", async (e: any) => {
         try {
-          // Places API (New): event.place is a Place object
+          console.log("[PAC raw event]", e, Object.keys(e));
           const place = e.place;
+          console.log("[PAC place before fetch]", place, place ? Object.keys(place) : null);
           await place.fetchFields({ fields: ["displayName", "location"] });
+          console.log("[PAC place after fetch]", {
+            displayName: place.displayName,
+            location: place.location,
+            lat: place.location?.lat?.(),
+            lng: place.location?.lng?.(),
+          });
 
           const name: string = place.displayName ?? "";
-          const loc = place.location; // google.maps.LatLng
+          const loc = place.location;
           const lat: number = typeof loc?.lat === "function" ? loc.lat() : Number(loc?.lat);
           const lng: number = typeof loc?.lng === "function" ? loc.lng() : Number(loc?.lng);
 
