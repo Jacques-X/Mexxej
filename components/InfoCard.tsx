@@ -10,99 +10,78 @@ interface Props {
   onDelete?: (id: string) => void;
 }
 
-const CATEGORY_META: Record<LocationCategory, { label: string; glyph: string; color: string }> = {
-  hotel:       { label: "Hotel",       glyph: "◑", color: "#d8a478" },
-  restaurant:  { label: "Restaurant",  glyph: "◆", color: "#e88c64" },
-  attraction:  { label: "Attraction",  glyph: "★", color: "#c8b894" },
-  transport:   { label: "Transport",   glyph: "→", color: "#88a8c0" },
-  other:       { label: "Other",       glyph: "·", color: "#9aa4b0" },
+const CAT_META: Record<LocationCategory, { label: string; glyph: string }> = {
+  hotel:       { label: "Hotel",       glyph: "◼" },
+  restaurant:  { label: "Restaurant",  glyph: "◼" },
+  attraction:  { label: "Attraction",  glyph: "◼" },
+  transport:   { label: "Transport",   glyph: "◼" },
+  other:       { label: "Other",       glyph: "◼" },
 };
 
 export default function InfoCard({ location, onClose, onStreetView, onDelete }: Props) {
-  const navigationUrl = `https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}&travelmode=walking`;
-  const meta = CATEGORY_META[location.category];
+  const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}&travelmode=walking`;
+  const meta   = CAT_META[location.category];
 
   const copyCoords = () => {
     navigator.clipboard.writeText(`${location.latitude}, ${location.longitude}`);
   };
 
   return (
-    /*
-     * Mobile: full-width anchored at bottom, rounded top corners.
-     * Desktop: floating 440px card, bottom-right (via mxj-info-card class below).
-     */
-    <div className="mxj-glass mxj-info-card animate-slide-up">
-      {/* Drag handle — mobile only */}
-      <div className="md:hidden" style={{ padding: "8px 0", display: "flex", justifyContent: "center" }}>
-        <div style={{ width: 38, height: 4, borderRadius: 2, background: "var(--mxj-stroke-strong)" }} />
+    <div className="mxj-info-card animate-slide-up">
+      {/* Mobile drag handle */}
+      <div className="md:hidden" style={{ padding: "10px 0 4px", display: "flex", justifyContent: "center" }}>
+        <div style={{ width: 36, height: 3, background: "var(--mxj-stroke-strong)" }} />
       </div>
 
-      {/* Photo placeholder */}
-      <div className="mxj-photo" style={{ height: 220, borderRadius: 0, borderLeft: "none", borderRight: "none", borderTop: "none" }}>
-        <span style={{ position: "relative", zIndex: 1 }}>
-          {location.name.toLowerCase()} · photo
-        </span>
-        {/* Close button overlaid on photo */}
-        <button
-          onClick={onClose}
-          style={{
-            position: "absolute", top: 12, right: 12, zIndex: 2,
-            width: 34, height: 34, borderRadius: "50%",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "var(--mxj-surface)",
-            border: "1px solid var(--mxj-stroke)",
-            cursor: "pointer", color: "var(--mxj-ink)", boxShadow: "0 2px 8px oklch(0% 0 0 / 0.14)",
-          }}
-          aria-label="Close"
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-            <path d="M3 3l10 10M13 3L3 13" />
-          </svg>
-        </button>
-      </div>
+      <div style={{ padding: "20px 24px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
 
-      <div style={{ padding: "18px 22px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
-        {/* Chips */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span className="mxj-chip">Day {location.day_number}</span>
-          <span
-            className="mxj-chip"
+        {/* Header row */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <span className="mxj-chip">Day {location.day_number}</span>
+            <span className="mxj-chip" style={{ color: "var(--mxj-red)", borderColor: "var(--mxj-red-border)" }}>
+              {meta.label}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
             style={{
-              background: meta.color + "22",
-              borderColor: meta.color + "55",
-              color: meta.color,
+              background: "none", border: "1px solid var(--mxj-stroke-strong)",
+              cursor: "pointer", color: "var(--mxj-muted)",
+              width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
             }}
+            aria-label="Close"
           >
-            {meta.glyph} {meta.label}
-          </span>
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square">
+              <path d="M3 3l10 10M13 3L3 13" />
+            </svg>
+          </button>
         </div>
 
         {/* Name */}
-        <h3 className="mxj-serif" style={{ fontSize: 36, margin: 0, lineHeight: 1.05 }}>
+        <h3 className="mxj-display" style={{ fontSize: "clamp(32px, 5vw, 44px)", margin: 0, lineHeight: 0.9, color: "var(--mxj-ink)" }}>
           {location.name}
         </h3>
 
         {/* Description */}
         {location.description && (
-          <p style={{ fontSize: 14, color: "var(--mxj-muted)", lineHeight: 1.55, margin: 0 }}>
+          <p style={{ fontSize: 13, color: "var(--mxj-muted)", lineHeight: 1.6, margin: 0 }}>
             {location.description}
           </p>
         )}
 
         <hr className="mxj-divider" />
 
-        {/* Coordinates — tap to copy */}
+        {/* Coordinates */}
         <button
           onClick={copyCoords}
-          style={{
-            background: "none", border: "none", cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 8, padding: 0,
-          }}
+          style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, padding: 0, textAlign: "left" }}
         >
-          <span className="mxj-mono">
-            {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
+          <span className="mxj-mono" style={{ color: "var(--mxj-muted)" }}>
+            {location.latitude.toFixed(5)}°N, {location.longitude.toFixed(5)}°E
           </span>
-          <span className="mxj-mono" style={{ color: "var(--mxj-faint)" }}>· copy</span>
+          <span className="mxj-mono" style={{ color: "var(--mxj-faint)" }}>copy</span>
         </button>
 
         {/* Media */}
@@ -110,71 +89,46 @@ export default function InfoCard({ location, onClose, onStreetView, onDelete }: 
           <MediaMoodBoard mediaUrl={location.media_url} locationName={location.name} />
         )}
 
+        <hr className="mxj-divider" />
+
         {/* Actions */}
-        <div style={{ display: "flex", gap: 10, marginTop: 4, flexDirection: onDelete ? "column" : "row" }}>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={() => onStreetView(location)}
-              className="mxj-btn mxj-btn-ghost"
-              style={{ flex: 1, justifyContent: "center", padding: "12px 0" }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                <circle cx="8" cy="6" r="2.5" /><path d="M3.5 14c.5-3 2.3-4.5 4.5-4.5s4 1.5 4.5 4.5" />
-              </svg>
-              Street View
-            </button>
-
-            <a
-              href={navigationUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mxj-btn mxj-btn-accent"
-              style={{ flex: 1, justifyContent: "center", padding: "12px 0", textDecoration: "none" }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
-                <path d="M3 8l10-5-3 12-2-5z" />
-              </svg>
-              Take Me There
-            </a>
-          </div>
-
-          {onDelete && (
-            <button
-              onClick={() => {
-                onDelete(location.id);
-                onClose();
-              }}
-              style={{
-                padding: "12px 16px",
-                borderRadius: 12,
-                border: "1px solid rgba(224, 112, 112, 0.4)",
-                background: "rgba(224, 112, 112, 0.08)",
-                color: "#e07070",
-                fontFamily: "var(--mxj-sans)",
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(224, 112, 112, 0.15)";
-                e.currentTarget.style.borderColor = "rgba(224, 112, 112, 0.6)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "rgba(224, 112, 112, 0.08)";
-                e.currentTarget.style.borderColor = "rgba(224, 112, 112, 0.4)";
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M3 4h10M6 4V2.5h4V4M5 4l.5 9h5L11 4M7 7v3M9 7v3" />
-              </svg>
-              Delete pin
-            </button>
-          )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => onStreetView(location)}
+            className="mxj-btn mxj-btn-ghost"
+            style={{ flex: 1, padding: "11px 0", justifyContent: "center" }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square">
+              <circle cx="8" cy="6" r="2.5" /><path d="M3.5 14c.5-3 2.3-4.5 4.5-4.5s4 1.5 4.5 4.5" />
+            </svg>
+            Street View
+          </button>
+          <a
+            href={navUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mxj-btn mxj-btn-primary"
+            style={{ flex: 1, padding: "11px 0", justifyContent: "center", textDecoration: "none" }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M3 8l10-5-3 12-2-5z" />
+            </svg>
+            Navigate
+          </a>
         </div>
+
+        {onDelete && (
+          <button
+            onClick={() => { onDelete(location.id); onClose(); }}
+            className="mxj-btn mxj-btn-danger"
+            style={{ width: "100%", padding: "11px 0", justifyContent: "center" }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square">
+              <path d="M3 4h10M6 4V2.5h4V4M5 4l.5 9h5L11 4M7 7v3M9 7v3" />
+            </svg>
+            Delete pin
+          </button>
+        )}
       </div>
     </div>
   );

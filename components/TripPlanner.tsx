@@ -1,454 +1,394 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  DndContext,
-  DragEndEvent,
-  DragOverEvent,
-  DragStartEvent,
-  PointerSensor,
-  TouchSensor,
-  KeyboardSensor,
-  useSensor,
-  useSensors,
-  DragOverlay,
-  closestCenter,
+  DndContext, closestCenter, PointerSensor, TouchSensor,
+  useSensor, useSensors, DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  sortableKeyboardCoordinates,
+  SortableContext, verticalListSortingStrategy,
+  useSortable, arrayMove,
 } from "@dnd-kit/sortable";
-import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
+
+import type { Trip, TripLocation, DayNote, Reservation, BudgetItem, PackingItem, LocationCategory, ConciergeSuggestion } from "@/types/trip";
 import {
-  supabase, addLocation, deleteLocation, updateLocation, reorderLocations, upsertDayNote,
-  addReservation, updateReservation, deleteReservation,
-  addBudgetItem, deleteBudgetItem,
-  addPackingItem, updatePackingItem, deletePackingItem,
+  getLocationsByTrip, addLocation, deleteLocation, reorderLocations,
+  getDayNotes, upsertDayNote, uploadMedia,
+  getReservations, addReservation, updateReservation, deleteReservation,
+  getBudgetItems, addBudgetItem, deleteBudgetItem,
+  getPackingItems, addPackingItem, updatePackingItem, deletePackingItem,
 } from "@/lib/supabase";
-import type {
-  Trip, TripLocation, DayNote, LocationCategory, CameraPosition,
-  Reservation, BudgetItem, PackingItem,
-} from "@/types/trip";
-import ReservationsPanel from "./ReservationsPanel";
-import BudgetPanel from "./BudgetPanel";
-import PackingPanel from "./PackingPanel";
+
 import Map3D, { type Map3DHandle } from "./Map3D";
 import InfoCard from "./InfoCard";
 import StreetViewPortal from "./StreetViewPortal";
+import BudgetPanel from "./BudgetPanel";
+import ReservationsPanel from "./ReservationsPanel";
+import PackingPanel from "./PackingPanel";
 import TravelConcierge from "./TravelConcierge";
 import Logo from "./Logo";
-import { computeDayTimeline, formatMinutes, type StopTiming, type TransportMode, TRANSPORT_META } from "@/lib/timeline";
 
-type ActiveTab = "map" | "reservations" | "budget" | "packing";
+// ── Types ──────────────────────────────────────────────────────
+type ActiveTab = "map" | "reservations" | "budget" | "packing" | "concierge";
 
-interface Props {
-  trip: Trip;
-  initialLocations: TripLocation[];
-  initialDayNotes: DayNote[];
-  initialReservations: Reservation[];
-  initialBudgetItems: BudgetItem[];
-  initialPackingItems: PackingItem[];
-  mapsApiKey: string;
-}
-
-const DAY_PALETTES = ["#e88c64", "#d8a478", "#88a8c0", "#c8b894", "#9aa4b0"];
-
-function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6_371_000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-const CATEGORY_META: Record<LocationCategory, { label: string; glyph: string; color: string }> = {
-  hotel:       { label: "Hotel",       glyph: "◑", color: "#d8a478" },
-  restaurant:  { label: "Restaurant",  glyph: "◆", color: "#e88c64" },
-  attraction:  { label: "Attraction",  glyph: "★", color: "#c8b894" },
-  transport:   { label: "Transport",   glyph: "→", color: "#88a8c0" },
-  other:       { label: "Other",       glyph: "·", color: "#9aa4b0" },
-};
-
-const CATEGORY_OPTIONS: LocationCategory[] = [
-  "hotel", "restaurant", "attraction", "transport", "other",
+const CAT_OPTIONS: { value: LocationCategory; label: string }[] = [
+  { value: "hotel",      label: "Hotel"       },
+  { value: "restaurant", label: "Restaurant"  },
+  { value: "attraction", label: "Attraction"  },
+  { value: "transport",  label: "Transport"   },
+  { value: "other",      label: "Other"       },
 ];
 
-// Inline SVG icons matching the design system
-const Ico = {
-  back:    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3l-5 5 5 5"/></svg>,
-  share:   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v8M5 5l3-3 3 3M3 10v3a1 1 0 001 1h8a1 1 0 001-1v-3"/></svg>,
-  plus:    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M8 3v10M3 8h10"/></svg>,
-  route:   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="3" cy="3" r="1.5"/><circle cx="13" cy="13" r="1.5"/><path d="M3 5v3a3 3 0 003 3h4a3 3 0 003-3"/></svg>,
-  sparkle: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M8 1.5L9 6l4.5 1L9 8l-1 4.5L7 8 2.5 7 7 6z"/></svg>,
-  film:    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M6 3v10M10 3v10M2 8h12"/></svg>,
-  trash:   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 4h10M6 4V2.5h4V4M5 4l.5 9h5L11 4M7 7v3M9 7v3"/></svg>,
-  close:   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>,
-  pin:     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 14s5-4.5 5-9a5 5 0 10-10 0c0 4.5 5 9 5 9z"/><circle cx="8" cy="5.5" r="1.6"/></svg>,
-};
+// ── Sortable stop row ──────────────────────────────────────────
+function SortableStop({
+  loc, isSelected, onClick,
+}: {
+  loc: TripLocation;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: loc.id });
 
-export default function TripPlanner({
-  trip, initialLocations, initialDayNotes,
-  initialReservations, initialBudgetItems, initialPackingItems,
-  mapsApiKey,
-}: Props) {
-  const mapRef = useRef<Map3DHandle>(null);
-
-  const [locations, setLocations] = useState<TripLocation[]>(initialLocations);
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const [dayNotes, setDayNotes] = useState<Record<number, string>>(
-    () => Object.fromEntries(initialDayNotes.map((n) => [n.day_number, n.content]))
-  );
-  const [activeTab, setActiveTab] = useState<ActiveTab>("map");
-  const [reservations, setReservations] = useState<Reservation[]>(initialReservations);
-  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>(initialBudgetItems);
-  const [packingItems, setPackingItems] = useState<PackingItem[]>(initialPackingItems);
-  const [activeLocation, setActiveLocation] = useState<TripLocation | null>(null);
-  const [streetViewLocation, setStreetViewLocation] = useState<TripLocation | null>(null);
-  const [showConcierge, setShowConcierge] = useState(false);
-  const [showAddPanel, setShowAddPanel] = useState(false);
-  const [showItinerary, setShowItinerary] = useState(false);
-  const [routeVisible, setRouteVisible] = useState(false);
-  const [isAdding, setIsAdding] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [addError, setAddError] = useState<string | null>(null);
-  const [dayFilter, setDayFilter] = useState<number | "all">("all");
-  const [addForm, setAddForm] = useState({
-    name: "", latitude: "", longitude: "",
-    day_number: "1", category: "attraction" as LocationCategory,
-    description: "", media_url: "",
-  });
-
-  useEffect(() => {
-    if (window.matchMedia("(min-width: 768px)").matches) {
-      setShowItinerary(true);
-    }
-  }, []);
-
-  // Supabase Realtime
-  useEffect(() => {
-    const channel = supabase
-      .channel(`trip-${trip.id}`)
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "trip_locations", filter: `trip_id=eq.${trip.id}` },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            setLocations((prev) => [...prev, payload.new as TripLocation].sort(
-              (a, b) => a.day_number - b.day_number || a.order_index - b.order_index
-            ));
-          } else if (payload.eventType === "DELETE") {
-            setLocations((prev) => prev.filter((l) => l.id !== payload.old.id));
-          } else if (payload.eventType === "UPDATE") {
-            setLocations((prev) =>
-              prev.map((l) => l.id === (payload.new as TripLocation).id ? payload.new as TripLocation : l)
-            );
-          }
-        }
-      ).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [trip.id]);
-
-  const flyTo = useCallback((loc: TripLocation, tilt = 65, range = 800) => {
-    const pos: CameraPosition = {
-      center: { lat: loc.latitude, lng: loc.longitude, altitude: 100 },
-      tilt, heading: 0, range,
-    };
-    mapRef.current?.flyCameraTo(pos, 3000);
-  }, []);
-
-  const handleMarkerClick = useCallback((loc: TripLocation) => {
-    setActiveLocation(loc);
-    setShowItinerary(false);
-    flyTo(loc);
-  }, [flyTo]);
-
-  // ── Drag-and-drop sensors ─────────────────────────────────
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveDragId(event.active.id as string);
-  }, []);
-
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    setActiveDragId(null);
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const activeId = active.id as string;
-    const overId = over.id as string;
-
-    // Determine if overId is a day-droppable (prefixed "day-") or a location id
-    const overIsDay = overId.startsWith("day-");
-    const targetDay = overIsDay
-      ? parseInt(overId.replace("day-", ""), 10)
-      : (locations.find((l) => l.id === overId)?.day_number ?? null);
-
-    if (targetDay === null) return;
-
-    const activeLoc = locations.find((l) => l.id === activeId);
-    if (!activeLoc) return;
-
-    let newLocations = [...locations];
-
-    if (activeLoc.day_number !== targetDay) {
-      // Cross-day move: change day_number, append at end of target day
-      const targetDayLocs = newLocations.filter((l) => l.id !== activeId && l.day_number === targetDay);
-      const newOrderIndex = targetDayLocs.length;
-      newLocations = newLocations.map((l) =>
-        l.id === activeId ? { ...l, day_number: targetDay, order_index: newOrderIndex } : l
-      );
-    } else {
-      // Same-day reorder
-      const dayLocs = newLocations.filter((l) => l.day_number === activeLoc.day_number);
-      const oldIdx = dayLocs.findIndex((l) => l.id === activeId);
-      const newIdx = dayLocs.findIndex((l) => l.id === overId);
-      if (oldIdx === -1 || newIdx === -1) return;
-
-      const reordered = [...dayLocs];
-      reordered.splice(oldIdx, 1);
-      reordered.splice(newIdx, 0, activeLoc);
-      const withNewIndexes = reordered.map((l, i) => ({ ...l, order_index: i }));
-
-      newLocations = newLocations.map((l) => {
-        const updated = withNewIndexes.find((u) => u.id === l.id);
-        return updated ?? l;
-      });
-    }
-
-    setLocations(newLocations.sort((a, b) => a.day_number - b.day_number || a.order_index - b.order_index));
-
-    try {
-      await reorderLocations(
-        newLocations.map((l) => ({ id: l.id, day_number: l.day_number, order_index: l.order_index }))
-      );
-    } catch {
-      // Rollback on failure
-      setLocations(locations);
-    }
-  }, [locations]);
-
-  const handleAddLocation = async () => {
-    if (isAdding) return;
-
-    const lat = parseFloat(addForm.latitude);
-    const lng = parseFloat(addForm.longitude);
-    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-      setAddError("Invalid coordinates. Please search for a place again.");
-      setTimeout(() => setAddError(null), 3000);
-      return;
-    }
-
-    const nearby = locations.find((l) => distanceMeters(lat, lng, l.latitude, l.longitude) < 50);
-    if (nearby) {
-      setAddError(`"${nearby.name}" is already at this location.`);
-      setTimeout(() => setAddError(null), 3000);
-      return;
-    }
-
-    setIsAdding(true);
-    try {
-      const newLoc = await addLocation({
-        trip_id: trip.id,
-        name: addForm.name,
-        latitude: lat,
-        longitude: lng,
-        day_number: parseInt(addForm.day_number),
-        category: addForm.category,
-        description: addForm.description || undefined,
-        media_url: addForm.media_url || undefined,
-      });
-      if (newLoc) {
-        setShowAddPanel(false);
-        setAddForm({ name: "", latitude: "", longitude: "", day_number: "1", category: "attraction", description: "", media_url: "" });
-        flyTo(newLoc);
-      }
-    } catch (err) {
-      setAddError("Failed to add location. Please try again.");
-      setTimeout(() => setAddError(null), 3000);
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    const locationToDelete = locations.find((l) => l.id === id);
-    try {
-      await deleteLocation(id);
-      setLocations((prev) => prev.filter((l) => l.id !== id));
-      if (activeLocation?.id === id) setActiveLocation(null);
-      setDeleteError(null);
-    } catch (err) {
-      setDeleteError(`Failed to delete ${locationToDelete?.name || "location"}`);
-      setTimeout(() => setDeleteError(null), 3000);
-    }
-  };
-
-  const toggleRoute = async () => {
-    if (routeVisible) {
-      mapRef.current?.clearRoute();
-      setRouteVisible(false);
-    } else {
-      await mapRef.current?.drawRoute(locations);
-      setRouteVisible(true);
-    }
-  };
-
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({ title: trip.name, url: window.location.href }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-    }
-  };
-
-  const mapCenter = locations.length
-    ? { lat: locations[0].latitude, lng: locations[0].longitude }
-    : undefined;
-
-  const byDay = locations.reduce<Record<number, TripLocation[]>>((acc, l) => {
-    (acc[l.day_number] ??= []).push(l);
-    return acc;
-  }, {});
-  const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
-
-  const filteredDays = dayFilter === "all" ? days : days.filter((d) => d === dayFilter);
-
-  const stopCount = locations.length;
-  const dayCount = days.length;
-
-  // Shared itinerary list
-  const activeDragLoc = activeDragId ? locations.find((l) => l.id === activeDragId) : null;
-
-  const itineraryList = (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "10px 20px",
+        background: isSelected ? "var(--mxj-surface-2)" : "transparent",
+        borderBottom: "1px solid var(--mxj-stroke)",
+        cursor: "pointer",
+        borderLeft: isSelected ? "2px solid var(--mxj-red)" : "2px solid transparent",
+      }}
+      onClick={onClick}
     >
-    <div className="overflow-y-auto scroll-touch scrollbar-thin" style={{ flex: 1, padding: "0 18px 18px" }}>
-      {filteredDays.map((day) => {
-        const dayLocs = byDay[day];
-        const dayIdx = days.indexOf(day);
-        const dayColor = DAY_PALETTES[dayIdx % DAY_PALETTES.length];
-        const timings = computeDayTimeline(dayLocs);
-        const timingById = Object.fromEntries(timings.map((t) => [t.locationId, t]));
-        return (
-          <DayDropZone key={day} dayNumber={day}>
-            <div style={{ marginBottom: 14 }}>
-              {/* Day header */}
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                  <span className="mxj-serif" style={{ fontSize: 36, lineHeight: 0.9, color: dayColor }}>
-                    {String(day).padStart(2, "0")}
-                  </span>
-                  <div>
-                    <div className="mxj-mono" style={{ marginBottom: 2 }}>Day {day}</div>
-                  </div>
-                </div>
-                <span className="mxj-mono" style={{ fontSize: 10 }}>{dayLocs.length} stop{dayLocs.length !== 1 ? "s" : ""}</span>
-              </div>
+      {/* Drag handle */}
+      <span
+        {...attributes}
+        {...listeners}
+        style={{ cursor: "grab", color: "var(--mxj-faint)", flexShrink: 0, display: "flex", alignItems: "center" }}
+        onClick={e => e.stopPropagation()}
+      >
+        <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+          <rect x="0" y="0"  width="3" height="3" rx="0" />
+          <rect x="7" y="0"  width="3" height="3" rx="0" />
+          <rect x="0" y="5.5" width="3" height="3" rx="0" />
+          <rect x="7" y="5.5" width="3" height="3" rx="0" />
+          <rect x="0" y="11" width="3" height="3" rx="0" />
+          <rect x="7" y="11" width="3" height="3" rx="0" />
+        </svg>
+      </span>
 
-              {/* Day note */}
-              <DayNoteField
-                value={dayNotes[day] ?? ""}
-                onChange={(v) => setDayNotes((prev) => ({ ...prev, [day]: v }))}
-                onBlur={(v) => { if (v.trim()) upsertDayNote(trip.id, day, v).catch(() => {}); }}
-              />
+      {/* Crosshair marker */}
+      <div className={`mxj-stop-marker${isSelected ? "" : " inactive"}`} />
 
-              {/* Stops */}
-              <div style={{ paddingLeft: 4 }}>
-                <SortableContext items={dayLocs.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-                  {dayLocs.map((loc, idx) => {
-                    const timing = timingById[loc.id];
-                    const nextTiming = idx < dayLocs.length - 1 ? timingById[dayLocs[idx + 1].id] : null;
-                    return (
-                      <SortableStop
-                        key={loc.id}
-                        loc={loc}
-                        timing={timing}
-                        isActive={activeLocation?.id === loc.id}
-                        isDragging={activeDragId === loc.id}
-                        onMarkerClick={handleMarkerClick}
-                        onDelete={handleDelete}
-                        onUpdate={async (updates) => {
-                          await updateLocation(loc.id, updates);
-                          setLocations((prev) => prev.map((l) => l.id === loc.id ? { ...l, ...updates } : l));
-                        }}
-                        travelToNextMin={nextTiming ? timing?.travelToNextMin : undefined}
-                      />
-                    );
-                  })}
-                </SortableContext>
-
-                {/* Add stop ghost button */}
-                <button
-                  className="mxj-btn mxj-btn-ghost"
-                  onClick={() => {
-                    setAddForm((f) => ({ ...f, day_number: String(day) }));
-                    setShowAddPanel(true);
-                  }}
-                  style={{ padding: "6px 10px", marginLeft: 14, marginTop: 4, fontFamily: "var(--mxj-mono)", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase" }}
-                >
-                  {Ico.plus}<span>add stop</span>
-                </button>
-              </div>
-            </div>
-          </DayDropZone>
-        );
-      })}
-
-      {locations.length === 0 && (
-        <div style={{ textAlign: "center", padding: "40px 0", color: "var(--mxj-muted)" }}>
-          <div className="mxj-mono">no stops yet</div>
-          <div style={{ marginTop: 8, fontSize: 13 }}>Tap + to add your first location.</div>
+      {/* Label */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--mxj-ink)" }}>
+          {loc.name}
         </div>
-      )}
+        {loc.arrival_time && (
+          <div className="mxj-mono" style={{ color: "var(--mxj-muted)", fontSize: 9, marginTop: 2 }}>
+            {loc.arrival_time}
+          </div>
+        )}
+      </div>
     </div>
-    <DragOverlay>
-      {activeDragLoc ? (
-        <div
-          className="mxj-stop mxj-glass"
-          style={{ padding: "8px 10px", alignItems: "flex-start", borderRadius: 8, opacity: 0.95, boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}
-        >
-          <span className="mxj-drag-handle" style={{ opacity: 1 }}>⠿</span>
-          <span className="mxj-stop-marker" style={{ background: CATEGORY_META[activeDragLoc.category].color, marginTop: 7, flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>{activeDragLoc.name}</span>
+  );
+}
+
+// ── Add Pin panel ──────────────────────────────────────────────
+function AddPinPanel({
+  tripId,
+  days,
+  onAdd,
+  onClose,
+}: {
+  tripId: string;
+  days: number[];
+  onAdd: (loc: TripLocation) => void;
+  onClose: () => void;
+}) {
+  const [name, setName]       = useState("");
+  const [lat, setLat]         = useState("");
+  const [lng, setLng]         = useState("");
+  const [day, setDay]         = useState(days[0] ?? 1);
+  const [cat, setCat]         = useState<LocationCategory>("attraction");
+  const [desc, setDesc]       = useState("");
+  const [arrival, setArrival] = useState("");
+  const [duration, setDuration] = useState("");
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState("");
+  const [coordConfirm, setCoordConfirm] = useState(false);
+  const inputRef              = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // Google Places autocomplete
+  useEffect(() => {
+    if (!inputRef.current || typeof google === "undefined") return;
+    const ac = new google.maps.places.Autocomplete(inputRef.current, { fields: ["geometry", "name"] });
+    ac.addListener("place_changed", () => {
+      const place = ac.getPlace();
+      if (place.geometry?.location) {
+        const la = place.geometry.location.lat();
+        const lo = place.geometry.location.lng();
+        setLat(la.toFixed(6));
+        setLng(lo.toFixed(6));
+        if (place.name) setName(place.name);
+        setCoordConfirm(true);
+      }
+    });
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const la = parseFloat(lat), lo = parseFloat(lng);
+    if (!name.trim() || isNaN(la) || isNaN(lo)) {
+      setError("Name and valid coordinates are required.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const loc = await addLocation({
+        trip_id: tripId, name: name.trim(), latitude: la, longitude: lo,
+        day_number: day, category: cat,
+        description: desc || undefined,
+        arrival_time: arrival || undefined,
+        duration_minutes: duration ? parseInt(duration) : undefined,
+        transport_mode: undefined, media_url: undefined,
+      });
+      if (loc) { onAdd(loc); onClose(); }
+    } catch {
+      setError("Failed to add location.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span className="mxj-section-label">Add stop</span>
+        <button onClick={onClose} style={{ background: "none", border: "1px solid var(--mxj-stroke-strong)", cursor: "pointer", color: "var(--mxj-muted)", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square">
+            <path d="M3 3l10 10M13 3L3 13" />
+          </svg>
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div>
+          <div className="mxj-label">Search or enter name</div>
+          <input ref={inputRef} className="mxj-input" placeholder="e.g. Torre de Belém" value={name} onChange={e => { setName(e.target.value); setCoordConfirm(false); }} required />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <div className="mxj-label">Latitude</div>
+            <input className="mxj-input" placeholder="38.6916" value={lat} onChange={e => setLat(e.target.value)} />
+          </div>
+          <div>
+            <div className="mxj-label">Longitude</div>
+            <input className="mxj-input" placeholder="-9.2160" value={lng} onChange={e => setLng(e.target.value)} />
           </div>
         </div>
-      ) : null}
-    </DragOverlay>
+
+        {coordConfirm && (
+          <p className="mxj-mono" style={{ color: "var(--mxj-success)", fontSize: 9, margin: 0 }}>
+            ✓ Coordinates set from map search
+          </p>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <div className="mxj-label">Day</div>
+            <select className="mxj-select" value={day} onChange={e => setDay(parseInt(e.target.value))}>
+              {days.map(d => <option key={d} value={d}>Day {d}</option>)}
+              <option value={Math.max(...days, 0) + 1}>Day {Math.max(...days, 0) + 1} (new)</option>
+            </select>
+          </div>
+          <div>
+            <div className="mxj-label">Category</div>
+            <select className="mxj-select" value={cat} onChange={e => setCat(e.target.value as LocationCategory)}>
+              {CAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <div className="mxj-label">Arrival time</div>
+            <input className="mxj-input" type="time" value={arrival} onChange={e => setArrival(e.target.value)} />
+          </div>
+          <div>
+            <div className="mxj-label">Duration (min)</div>
+            <input className="mxj-input" type="number" min="0" placeholder="60" value={duration} onChange={e => setDuration(e.target.value)} />
+          </div>
+        </div>
+
+        <div>
+          <div className="mxj-label">Notes</div>
+          <textarea className="mxj-input" rows={2} placeholder="Any notes about this stop…" value={desc} onChange={e => setDesc(e.target.value)} style={{ resize: "none" }} />
+        </div>
+
+        {error && <p className="mxj-mono" style={{ color: "var(--mxj-red)", fontSize: 9, margin: 0 }}>{error}</p>}
+
+        <button type="submit" disabled={saving} className="mxj-btn mxj-btn-primary" style={{ justifyContent: "center", padding: "12px 0" }}>
+          {saving ? "Adding…" : "Add to route"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ── Main planner ───────────────────────────────────────────────
+export default function TripPlanner({ trip }: { trip: Trip }) {
+  const mapRef            = useRef<Map3DHandle>(null);
+  const apiKey            = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+
+  const [locations, setLocations]         = useState<TripLocation[]>([]);
+  const [dayNotes, setDayNotes]           = useState<DayNote[]>([]);
+  const [reservations, setReservations]   = useState<Reservation[]>([]);
+  const [budgetItems, setBudgetItems]     = useState<BudgetItem[]>([]);
+  const [packingItems, setPackingItems]   = useState<PackingItem[]>([]);
+
+  const [selectedLocation, setSelectedLocation] = useState<TripLocation | null>(null);
+  const [streetViewLoc, setStreetViewLoc]       = useState<TripLocation | null>(null);
+  const [activeTab, setActiveTab]               = useState<ActiveTab>("map");
+  const [showSidebar, setShowSidebar]           = useState(true);
+  const [showAddPin, setShowAddPin]             = useState(false);
+  const [activeDay, setActiveDay]               = useState<number | null>(null);
+  const [copied, setCopied]                     = useState(false);
+
+  // Data load
+  useEffect(() => {
+    Promise.all([
+      getLocationsByTrip(trip.id),
+      getDayNotes(trip.id),
+      getReservations(trip.id),
+      getBudgetItems(trip.id),
+      getPackingItems(trip.id),
+    ]).then(([locs, notes, res, budget, packing]) => {
+      setLocations(locs);
+      setDayNotes(notes);
+      setReservations(res);
+      setBudgetItems(budget);
+      setPackingItems(packing);
+      if (locs.length) setActiveDay(locs[0].day_number);
+    });
+  }, [trip.id]);
+
+  const days        = [...new Set(locations.map(l => l.day_number))].sort((a, b) => a - b);
+  const displayDays = days.length ? days : [1];
+  const filteredLocs = activeDay !== null ? locations.filter(l => l.day_number === activeDay) : locations;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 5 } })
+  );
+
+  function handleMarkerClick(loc: TripLocation) {
+    setSelectedLocation(loc);
+    setActiveDay(loc.day_number);
+    mapRef.current?.flyCameraTo({
+      center: { lat: loc.latitude, lng: loc.longitude, altitude: 300 },
+      tilt: 60, heading: 0, range: 600,
+    }, 1200);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const dayLocs   = filteredLocs;
+    const oldIdx    = dayLocs.findIndex(l => l.id === active.id);
+    const newIdx    = dayLocs.findIndex(l => l.id === over.id);
+    const reordered = arrayMove(dayLocs, oldIdx, newIdx).map((l, i) => ({ ...l, order_index: i }));
+    setLocations(prev => {
+      const others = prev.filter(l => l.day_number !== activeDay);
+      return [...others, ...reordered].sort((a, b) => a.day_number - b.day_number || a.order_index - b.order_index);
+    });
+    reorderLocations(reordered.map(l => ({ id: l.id, day_number: l.day_number, order_index: l.order_index })));
+  }
+
+  function handleAddSuggestion(s: ConciergeSuggestion) {
+    setShowAddPin(true);
+    setActiveTab("map");
+  }
+
+  async function handleDeleteLocation(id: string) {
+    await deleteLocation(id);
+    setLocations(prev => prev.filter(l => l.id !== id));
+    if (selectedLocation?.id === id) setSelectedLocation(null);
+  }
+
+  function copyShareLink() {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const TAB_LABELS: Record<ActiveTab, string> = {
+    map: "Route", reservations: "Bookings", budget: "Budget", packing: "Packing", concierge: "Concierge",
+  };
+
+  // ── Itinerary list ──
+  const itineraryList = (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={filteredLocs.map(l => l.id)} strategy={verticalListSortingStrategy}>
+        <div className="scrollbar-thin scroll-touch" style={{ flex: 1, overflowY: "auto" }}>
+          {filteredLocs.length === 0 ? (
+            <div style={{ padding: "32px 20px", textAlign: "center" }}>
+              <p className="mxj-mono" style={{ color: "var(--mxj-faint)" }}>No stops on this day.</p>
+              <button onClick={() => setShowAddPin(true)} className="mxj-btn mxj-btn-ghost" style={{ marginTop: 12, padding: "9px 16px", fontSize: 12 }}>
+                Add first stop
+              </button>
+            </div>
+          ) : (
+            filteredLocs.map(loc => (
+              <SortableStop
+                key={loc.id}
+                loc={loc}
+                isSelected={selectedLocation?.id === loc.id}
+                onClick={() => handleMarkerClick(loc)}
+              />
+            ))
+          )}
+        </div>
+      </SortableContext>
     </DndContext>
   );
 
-  // Day filter pill tabs
+  // ── Day tabs ──
   const dayTabs = (
-    <div className="mxj-pill-tabs" style={{ width: "100%" }} role="group" aria-label="Filter by day">
-      <button
-        className={`mxj-pill-tab ${dayFilter === "all" ? "is-active" : ""}`}
-        style={{ flex: 1 }}
-        onClick={() => setDayFilter("all")}
-        aria-pressed={dayFilter === "all"}
-      >
-        All
-      </button>
-      {days.map((d) => (
+    <div className="scrollbar-thin" style={{ display: "flex", gap: 0, overflowX: "auto", flexShrink: 0 }}>
+      {displayDays.map(d => (
         <button
           key={d}
-          className={`mxj-pill-tab ${dayFilter === d ? "is-active" : ""}`}
-          style={{ flex: 1 }}
-          onClick={() => setDayFilter(d)}
-          aria-pressed={dayFilter === d}
+          onClick={() => setActiveDay(d)}
+          style={{
+            padding: "8px 14px",
+            background: "none",
+            border: "none",
+            borderBottom: activeDay === d ? "2px solid var(--mxj-red)" : "2px solid transparent",
+            color: activeDay === d ? "var(--mxj-ink)" : "var(--mxj-muted)",
+            cursor: "pointer",
+            fontFamily: "var(--mxj-mono)",
+            fontSize: 10,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}
         >
           Day {d}
         </button>
@@ -457,933 +397,274 @@ export default function TripPlanner({
   );
 
   return (
-    <div className="h-screen-safe" style={{ position: "relative", overflow: "hidden", background: "var(--mxj-bg)" }}>
+    <div style={{ position: "relative", width: "100%", height: "100vh", overflow: "hidden", background: "var(--mxj-base)" }}>
 
-      {/* ── Full-screen 3D Map — always mounted, hidden on other tabs ── */}
-      <div style={{ position: "absolute", inset: 0, visibility: activeTab === "map" ? "visible" : "hidden", pointerEvents: activeTab === "map" ? "auto" : "none" }}>
+      {/* ── Map ── */}
       <Map3D
         ref={mapRef}
-        apiKey={mapsApiKey}
+        apiKey={apiKey}
         locations={locations}
         onMarkerClick={handleMarkerClick}
-        initialCenter={mapCenter}
         destination={trip.destination}
       />
-      </div>
 
-      {/* ── Non-map panels (mobile full-screen) ── */}
-      {activeTab !== "map" && (
-        <div className="md:hidden" style={{ position: "absolute", inset: 0, overflowY: "auto", background: "var(--mxj-bg)", paddingBottom: 64, zIndex: 5 }}>
-          {activeTab === "reservations" && (
-            <ReservationsPanel
-              trip={trip}
-              reservations={reservations}
-              onAdd={async (r) => { const res = await addReservation(r); setReservations((p) => [...p, res]); }}
-              onUpdate={async (id, updates) => { await updateReservation(id, updates); setReservations((p) => p.map((rv) => rv.id === id ? { ...rv, ...updates } : rv)); }}
-              onDelete={async (id) => { await deleteReservation(id); setReservations((p) => p.filter((rv) => rv.id !== id)); }}
-            />
-          )}
-          {activeTab === "budget" && (
-            <BudgetPanel
-              trip={trip}
-              items={budgetItems}
-              locations={locations}
-              onAdd={async (item) => { const b = await addBudgetItem(item); setBudgetItems((p) => [...p, b]); }}
-              onDelete={async (id) => { await deleteBudgetItem(id); setBudgetItems((p) => p.filter((b) => b.id !== id)); }}
-            />
-          )}
-          {activeTab === "packing" && (
-            <PackingPanel
-              trip={trip}
-              items={packingItems}
-              onAdd={async (item) => { const p = await addPackingItem(item); setPackingItems((prev) => [...prev, p]); }}
-              onUpdate={async (id, updates) => { await updatePackingItem(id, updates); setPackingItems((p) => p.map((i) => i.id === id ? { ...i, ...updates } : i)); }}
-              onDelete={async (id) => { await deletePackingItem(id); setPackingItems((p) => p.filter((i) => i.id !== id)); }}
-            />
-          )}
-        </div>
+      {/* ── Street view overlay ── */}
+      {streetViewLoc && (
+        <StreetViewPortal location={streetViewLoc} onClose={() => setStreetViewLoc(null)} />
       )}
 
-      {/* ════════ DESKTOP (md+) ════════ */}
-
-      {/* Desktop top bar */}
-      <div className="hidden md:flex" style={{
-        position: "absolute", top: 20, left: 20, right: 20,
-        justifyContent: "space-between", alignItems: "center", zIndex: 3,
-        gap: 12, minWidth: 0,
+      {/* ── Top bar ── */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0, zIndex: 5,
+        height: 48,
+        background: "var(--mxj-surface)",
+        borderBottom: "1px solid var(--mxj-ink)",
+        display: "flex",
+        alignItems: "center",
+        padding: "0 16px",
+        gap: 16,
       }}>
-        {/* Left pill: back | Logo | trip info */}
-        <div className="mxj-glass" style={{ borderRadius: 14, padding: "10px 14px", display: "flex", alignItems: "center", gap: 14, minWidth: 0, overflow: "hidden" }}>
-          <a
-            href="/"
-            style={{ background: "none", border: "none", color: "var(--mxj-ink)", cursor: "pointer", display: "flex", textDecoration: "none", flexShrink: 0 }}
-            title="Back"
-          >
-            {Ico.back}
-          </a>
-          <hr style={{ width: 1, height: 22, background: "var(--mxj-stroke)", border: "none", margin: 0, flexShrink: 0 }} />
-          <Logo size={16} />
-          <hr style={{ width: 1, height: 22, background: "var(--mxj-stroke)", border: "none", margin: 0, flexShrink: 0 }} />
-          <div style={{ minWidth: 0 }}>
-            <div className="mxj-serif" style={{ fontSize: 18, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{trip.name}</div>
-            <span className="mxj-mono" style={{ whiteSpace: "nowrap" }}>
-              {trip.destination ? `${trip.destination} · ` : ""}{dayCount > 0 ? `${dayCount} day${dayCount !== 1 ? "s" : ""} · ` : ""}{stopCount} stop{stopCount !== 1 ? "s" : ""}
-            </span>
-          </div>
+        {/* Sidebar toggle */}
+        <button
+          onClick={() => setShowSidebar(p => !p)}
+          style={{ background: "none", border: "1px solid var(--mxj-stroke-strong)", cursor: "pointer", color: "var(--mxj-muted)", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+          aria-label={showSidebar ? "Hide sidebar" : "Show sidebar"}
+        >
+          <svg width="12" height="10" viewBox="0 0 12 10" fill="currentColor">
+            <rect x="0" y="0"  width="12" height="1.5" />
+            <rect x="0" y="4.25" width="12" height="1.5" />
+            <rect x="0" y="8.5" width="12" height="1.5" />
+          </svg>
+        </button>
+
+        <Logo size={14} />
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span className="mxj-mono" style={{ fontSize: 10, color: "var(--mxj-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>
+            {trip.name.toUpperCase()}{trip.destination ? ` · ${trip.destination}` : ""}
+          </span>
         </div>
 
-        {/* Right pill: share */}
-        <button
-          className="mxj-glass mxj-btn"
-          style={{ borderRadius: 999, padding: "9px 16px", flexShrink: 0 }}
-          onClick={handleShare}
-        >
-          {Ico.share}<span>Share</span>
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          <button
+            onClick={copyShareLink}
+            className="mxj-btn mxj-btn-ghost"
+            style={{ padding: "6px 12px", fontSize: 11 }}
+          >
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square">
+              <rect x="2" y="5" width="9" height="9" /><path d="M5 5V3h8v8h-2" />
+            </svg>
+            {copied ? "Copied!" : "Share"}
+          </button>
+          <button
+            onClick={() => { setShowAddPin(true); setShowSidebar(true); setActiveTab("map"); }}
+            className="mxj-btn mxj-btn-primary"
+            style={{ padding: "6px 14px", fontSize: 11 }}
+          >
+            + Add stop
+          </button>
+        </div>
       </div>
 
-      {/* Desktop itinerary sidebar */}
+      {/* ── Desktop sidebar ── */}
       <div
         className="hidden md:flex"
         style={{
-          position: "absolute", top: 86, bottom: 20, left: 20,
-          width: 380, zIndex: 3,
-          flexDirection: "column",
-          transform: showItinerary ? "translateX(0)" : "translateX(calc(-100% - 20px))",
-          transition: "transform 0.3s cubic-bezier(0.16,1,0.3,1)",
-        }}
-      >
-        <div className="mxj-glass mxj-instrument-panel" style={{ borderRadius: "var(--mxj-r-xl)", display: "flex", flexDirection: "column", overflow: "hidden", height: "100%" }}>
-          {/* Desktop tab bar */}
-          <div style={{ display: "flex", borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0 }}>
-            {(["map", "reservations", "budget", "packing"] as ActiveTab[]).map((tab) => {
-              const labels: Record<ActiveTab, string> = { map: "Itinerary", reservations: "Bookings", budget: "Budget", packing: "Packing" };
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  style={{
-                    flex: 1, padding: "12px 0", background: "none", border: "none",
-                    borderBottom: activeTab === tab ? "2px solid var(--mxj-accent)" : "2px solid transparent",
-                    color: activeTab === tab ? "var(--mxj-accent)" : "var(--mxj-muted)",
-                    cursor: "pointer", fontSize: 10, fontFamily: "var(--mxj-mono)",
-                    letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: -1,
-                  }}
-                >
-                  {labels[tab]}
-                </button>
-              );
-            })}
-            <span className="mxj-mono" style={{ padding: "12px 14px", cursor: "pointer", fontSize: 11, color: "var(--mxj-muted)", flexShrink: 0 }} onClick={() => setShowItinerary(false)}>✕</span>
-          </div>
-
-          {activeTab === "map" ? (
-            <>
-              <div style={{ padding: "14px 22px 10px", flexShrink: 0 }}>
-                {dayTabs}
-              </div>
-              <hr className="mxj-divider" />
-              {itineraryList}
-            </>
-          ) : (
-            <div style={{ flex: 1, overflowY: "auto", padding: "0" }}>
-              {activeTab === "reservations" && (
-                <ReservationsPanel
-                  trip={trip}
-                  reservations={reservations}
-                  onAdd={async (r) => { const res = await addReservation(r); setReservations((p) => [...p, res]); }}
-                  onUpdate={async (id, updates) => { await updateReservation(id, updates); setReservations((p) => p.map((rv) => rv.id === id ? { ...rv, ...updates } : rv)); }}
-                  onDelete={async (id) => { await deleteReservation(id); setReservations((p) => p.filter((rv) => rv.id !== id)); }}
-                />
-              )}
-              {activeTab === "budget" && (
-                <BudgetPanel
-                  trip={trip}
-                  items={budgetItems}
-                  locations={locations}
-                  onAdd={async (item) => { const b = await addBudgetItem(item); setBudgetItems((p) => [...p, b]); }}
-                  onDelete={async (id) => { await deleteBudgetItem(id); setBudgetItems((p) => p.filter((b) => b.id !== id)); }}
-                />
-              )}
-              {activeTab === "packing" && (
-                <PackingPanel
-                  trip={trip}
-                  items={packingItems}
-                  onAdd={async (item) => { const p = await addPackingItem(item); setPackingItems((prev) => [...prev, p]); }}
-                  onUpdate={async (id, updates) => { await updatePackingItem(id, updates); setPackingItems((p) => p.map((i) => i.id === id ? { ...i, ...updates } : i)); }}
-                  onDelete={async (id) => { await deletePackingItem(id); setPackingItems((p) => p.filter((i) => i.id !== id)); }}
-                />
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Show itinerary toggle (desktop, when hidden) */}
-      {!showItinerary && (
-        <button
-          className="hidden md:flex mxj-glass"
-          onClick={() => setShowItinerary(true)}
-          title="Show itinerary"
-          style={{
-            position: "absolute", top: 94, left: 20, zIndex: 3,
-            width: 40, height: 40, borderRadius: "50%",
-            alignItems: "center", justifyContent: "center",
-            cursor: "pointer", color: "var(--mxj-ink)",
-            border: "1px solid var(--mxj-stroke)",
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3l5 5-5 5"/></svg>
-        </button>
-      )}
-
-      {/* Desktop right icon stack */}
-      <div className="hidden md:flex" style={{
-        position: "absolute", top: 86, right: 20,
-        flexDirection: "column", gap: 10, zIndex: 3,
-      }}>
-        <IconCircle label="Add stop" onClick={() => setShowAddPanel(true)}>{Ico.plus}</IconCircle>
-        <IconCircle label="Toggle route" active={routeVisible} onClick={toggleRoute}>{Ico.route}</IconCircle>
-        <hr className="mxj-divider" style={{ width: 24, margin: "4px auto" }} />
-        <IconCircle label="AI concierge" active={showConcierge} onClick={() => setShowConcierge((v) => !v)}>{Ico.sparkle}</IconCircle>
-      </div>
-
-      {/* ════════ MOBILE ════════ */}
-
-      {/* Mobile top bar */}
-      <div className="md:hidden flex" style={{
-        position: "absolute",
-        top: "max(14px, env(safe-area-inset-top, 14px))",
-        left: 14, right: 14,
-        gap: 8, zIndex: 3,
-      }}>
-        <a href="/" style={{ textDecoration: "none" }}>
-          <IconCircle size={38}>{Ico.back}</IconCircle>
-        </a>
-        <div className="mxj-glass" style={{ flex: 1, borderRadius: 19, padding: "8px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="mxj-serif" style={{ fontSize: 15, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {trip.name}
-            </div>
-            <span className="mxj-mono" style={{ fontSize: 9 }}>
-              {dayCount > 0 ? `${dayCount} day${dayCount !== 1 ? "s" : ""} · ` : ""}{stopCount} stop{stopCount !== 1 ? "s" : ""}
-            </span>
-          </div>
-        </div>
-        <IconCircle size={38} onClick={handleShare}>{Ico.share}</IconCircle>
-      </div>
-
-      {/* Mobile right action stack */}
-      <div className="md:hidden flex flex-col" style={{
-        position: "absolute",
-        top: "calc(max(14px, env(safe-area-inset-top, 14px)) + 60px)",
-        right: 14,
-        gap: 8, zIndex: 3,
-      }}>
-        <IconCircle size={40} active={routeVisible} onClick={toggleRoute}>{Ico.route}</IconCircle>
-        <IconCircle size={40} active={showConcierge} onClick={() => setShowConcierge((v) => !v)}>{Ico.sparkle}</IconCircle>
-      </div>
-
-      {/* Mobile bottom sheet (always visible at mid) */}
-      <div
-        className="md:hidden mxj-glass-strong flex flex-col overflow-hidden"
-        style={{
           position: "absolute",
-          top: showItinerary ? "42vh" : "calc(100% - 88px)",
-          left: 0, right: 0, bottom: 0,
-          borderRadius: "24px 24px 0 0",
+          top: 48,
+          bottom: 0,
+          left: 0,
+          width: 360,
           zIndex: 4,
-          transition: "top 0.3s cubic-bezier(0.16,1,0.3,1)",
+          flexDirection: "column",
+          transform: showSidebar ? "translateX(0)" : "translateX(-100%)",
+          transition: "transform 0.25s cubic-bezier(0.16,1,0.3,1)",
+          background: "var(--mxj-surface)",
+          borderRight: "1px solid var(--mxj-ink)",
         }}
       >
-        {/* Handle */}
-        <div
-          style={{ padding: "8px 0", display: "flex", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
-          onClick={() => setShowItinerary((v) => !v)}
-        >
-          <div style={{ width: 38, height: 4, borderRadius: 2, background: "var(--mxj-stroke-strong)" }} />
-        </div>
-
-        <div style={{ padding: "4px 18px 14px", flexShrink: 0 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-            <h2 className="mxj-serif" style={{ fontSize: 22, margin: 0 }}>Itinerary</h2>
-            <button
-              className="mxj-btn"
-              style={{ padding: "5px 10px", fontSize: 11 }}
-              onClick={() => setShowAddPanel(true)}
-            >
-              {Ico.plus}<span>Add</span>
-            </button>
-          </div>
-          {dayTabs}
-        </div>
-
-        {itineraryList}
-      </div>
-
-      {/* ── Overlays ── */}
-
-      {activeLocation && (
-        <div
-          className="md:flex md:items-center md:justify-center"
-          style={{ position: "absolute", inset: 0, zIndex: 30 }}
-          onClick={(e) => { if (e.target === e.currentTarget) setActiveLocation(null); }}
-        >
-          <InfoCard
-            location={activeLocation}
-            onClose={() => setActiveLocation(null)}
-            onStreetView={(loc) => setStreetViewLocation(loc)}
-            onDelete={handleDelete}
-          />
-        </div>
-      )}
-
-      {showConcierge && (
-        <div
-          className="md:flex md:items-center md:justify-center"
-          style={{ position: "absolute", inset: 0, zIndex: 30 }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowConcierge(false); }}
-        >
-          <TravelConcierge
-            trip={trip}
-            locations={locations}
-            onSuggestion={(suggestion) => {
-              mapRef.current?.flyCameraTo({
-                center: { lat: suggestion.latitude, lng: suggestion.longitude, altitude: 200 },
-                tilt: 65, heading: 0, range: 1000,
-              });
-            }}
-            onClose={() => setShowConcierge(false)}
-          />
-        </div>
-      )}
-
-      {showAddPanel && (
-        <AddPinPanel
-          form={addForm}
-          onChange={(k, v) => setAddForm((p) => ({ ...p, [k]: v }))}
-          onSubmit={handleAddLocation}
-          onClose={() => setShowAddPanel(false)}
-          days={days.length > 0 ? days : [1]}
-          isSubmitting={isAdding}
-        />
-      )}
-
-      {streetViewLocation && (
-        <StreetViewPortal
-          location={streetViewLocation}
-          onClose={() => setStreetViewLocation(null)}
-        />
-      )}
-
-      {/* ── Tab bar (bottom on mobile, top of sidebar on desktop) ── */}
-      <nav
-        className="md:hidden mxj-glass-strong"
-        style={{
-          position: "absolute", bottom: 0, left: 0, right: 0,
-          zIndex: 20,
-          display: "flex",
-          borderTop: "1px solid var(--mxj-stroke)",
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        }}
-      >
-        {(["map", "reservations", "budget", "packing"] as ActiveTab[]).map((tab) => {
-          const labels: Record<ActiveTab, string> = { map: "Map", reservations: "Bookings", budget: "Budget", packing: "Packing" };
-          const glyphs: Record<ActiveTab, React.ReactNode> = {
-            map: <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 14s5-4.5 5-9a5 5 0 10-10 0c0 4.5 5 9 5 9z"/><circle cx="8" cy="5.5" r="1.6"/></svg>,
-            reservations: <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 3V1M11 3V1M2 7h12"/></svg>,
-            budget: <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6"/><path d="M8 5v1.5M8 9.5V11M6.5 6.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5S9 8 8 8s-1.5.67-1.5 1.5S7.17 11 8 11"/></svg>,
-            packing: <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="3" y="5" width="10" height="9" rx="1"/><path d="M6 5V3.5A1.5 1.5 0 0110 3.5V5"/><path d="M5 9l1.5 1.5L9 7"/></svg>,
-          };
-          return (
+        {/* Tab bar */}
+        <div style={{ display: "flex", borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0, overflowX: "auto" }}>
+          {(Object.keys(TAB_LABELS) as ActiveTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
-                gap: 3, padding: "10px 0", background: "none", border: "none",
-                color: activeTab === tab ? "var(--mxj-accent)" : "var(--mxj-muted)",
-                cursor: "pointer", fontSize: 9, fontFamily: "var(--mxj-mono)",
-                letterSpacing: "0.06em", textTransform: "uppercase",
-                borderTop: activeTab === tab ? "2px solid var(--mxj-accent)" : "2px solid transparent",
+                flex: 1,
+                padding: "11px 0",
+                background: "none",
+                border: "none",
+                borderBottom: activeTab === tab ? "2px solid var(--mxj-red)" : "2px solid transparent",
+                color: activeTab === tab ? "var(--mxj-ink)" : "var(--mxj-muted)",
+                cursor: "pointer",
+                fontFamily: "var(--mxj-mono)",
+                fontSize: 9,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+                marginBottom: -1,
+                flexShrink: 0,
               }}
             >
-              {glyphs[tab]}
-              {labels[tab]}
+              {TAB_LABELS[tab]}
             </button>
-          );
-        })}
+          ))}
+        </div>
+
+        {/* Tab content */}
+        {activeTab === "map" ? (
+          <>
+            {showAddPin ? (
+              <div className="scrollbar-thin scroll-touch" style={{ flex: 1, overflowY: "auto" }}>
+                <AddPinPanel
+                  tripId={trip.id}
+                  days={displayDays}
+                  onAdd={loc => { setLocations(p => [...p, loc]); setSelectedLocation(loc); }}
+                  onClose={() => setShowAddPin(false)}
+                />
+              </div>
+            ) : (
+              <>
+                {/* Day tabs + add */}
+                <div style={{ borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0, display: "flex", alignItems: "center" }}>
+                  <div style={{ flex: 1, overflow: "hidden" }}>{dayTabs}</div>
+                  <button
+                    onClick={() => setShowAddPin(true)}
+                    className="mxj-mono"
+                    style={{ background: "none", border: "none", borderLeft: "1px solid var(--mxj-stroke)", cursor: "pointer", padding: "0 14px", height: "100%", color: "var(--mxj-muted)", fontSize: 11, flexShrink: 0 }}
+                    title="Add stop"
+                  >
+                    +
+                  </button>
+                </div>
+                {itineraryList}
+              </>
+            )}
+          </>
+        ) : activeTab === "reservations" ? (
+          <ReservationsPanel
+            tripId={trip.id}
+            reservations={reservations}
+            onAdd={r => setReservations(p => [...p, r])}
+            onUpdate={(id, u) => setReservations(p => p.map(r => r.id === id ? { ...r, ...u } : r))}
+            onDelete={id => setReservations(p => p.filter(r => r.id !== id))}
+          />
+        ) : activeTab === "budget" ? (
+          <BudgetPanel tripId={trip.id} items={budgetItems} onUpdate={setBudgetItems} />
+        ) : activeTab === "packing" ? (
+          <PackingPanel tripId={trip.id} items={packingItems} onUpdate={setPackingItems} />
+        ) : (
+          <TravelConcierge
+            tripId={trip.id}
+            destination={trip.destination}
+            locations={locations}
+            onAddSuggestion={handleAddSuggestion}
+          />
+        )}
+      </div>
+
+      {/* ── Info card ── */}
+      {selectedLocation && !streetViewLoc && (
+        <InfoCard
+          location={selectedLocation}
+          onClose={() => setSelectedLocation(null)}
+          onStreetView={loc => setStreetViewLoc(loc)}
+          onDelete={handleDeleteLocation}
+        />
+      )}
+
+      {/* ── Mobile bottom nav ── */}
+      <nav
+        className="md:hidden"
+        style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 15,
+          background: "var(--mxj-surface)",
+          borderTop: "1px solid var(--mxj-ink)",
+          display: "flex",
+        }}
+      >
+        {(Object.keys(TAB_LABELS) as ActiveTab[]).map(tab => (
+          <button
+            key={tab}
+            onClick={() => { setActiveTab(tab); setShowSidebar(true); }}
+            style={{
+              flex: 1,
+              padding: "12px 0",
+              background: "none",
+              border: "none",
+              borderTop: activeTab === tab && showSidebar ? "2px solid var(--mxj-red)" : "2px solid transparent",
+              color: activeTab === tab && showSidebar ? "var(--mxj-ink)" : "var(--mxj-muted)",
+              cursor: "pointer",
+              fontFamily: "var(--mxj-mono)",
+              fontSize: 8,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+            }}
+          >
+            {TAB_LABELS[tab]}
+          </button>
+        ))}
       </nav>
 
-{/* Add error toast */}
-      {addError && (
-        <div className="mxj-glass" style={{
-          position: "absolute", bottom: 80, left: "50%", transform: "translateX(-50%)",
-          zIndex: 50, borderRadius: 12, padding: "12px 20px",
-          display: "flex", alignItems: "center", gap: 8,
-          background: "var(--mxj-danger-bg)",
-          border: "1px solid var(--mxj-danger-border)",
-          whiteSpace: "nowrap",
-        }}>
-          <span style={{ width: 6, height: 6, borderRadius: 3, background: "var(--mxj-danger)", flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: "var(--mxj-danger-text)" }}>{addError}</span>
-        </div>
-      )}
-
-      {/* Delete error toast */}
-      {deleteError && (
-        <div className="mxj-glass" style={{
-          position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)",
-          zIndex: 50, borderRadius: 12, padding: "12px 20px",
-          display: "flex", alignItems: "center", gap: 8,
-          background: "var(--mxj-danger-bg)",
-          border: "1px solid var(--mxj-danger-border)",
-        }}>
-          <span style={{ width: 6, height: 6, borderRadius: 3, background: "var(--mxj-danger)", flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: "var(--mxj-danger-text)" }}>{deleteError}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Day note inline field ──
-function DayNoteField({
-  value, onChange, onBlur,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onBlur: (v: string) => void;
-}) {
-  const [focused, setFocused] = useState(false);
-
-  if (!focused && !value) {
-    return (
-      <button
-        onClick={() => setFocused(true)}
-        className="mxj-mono"
-        style={{
-          background: "none", border: "none", cursor: "pointer",
-          color: "var(--mxj-faint)", fontSize: 9, padding: "2px 0 8px",
-          letterSpacing: "0.08em", textTransform: "uppercase",
-        }}
-      >
-        + add day note
-      </button>
-    );
-  }
-
-  return (
-    <textarea
-      autoFocus={focused && !value}
-      value={value}
-      rows={2}
-      placeholder="Day notes — logistics, tips, reminders…"
-      className="mxj-input"
-      style={{ width: "100%", resize: "none", fontSize: 12, marginBottom: 8, height: "auto" }}
-      onChange={(e) => onChange(e.target.value)}
-      onFocus={() => setFocused(true)}
-      onBlur={(e) => { setFocused(false); onBlur(e.target.value); }}
-    />
-  );
-}
-
-// ── Sortable stop row ──
-function SortableStop({
-  loc, timing, travelToNextMin, isActive, isDragging, onMarkerClick, onDelete, onUpdate,
-}: {
-  loc: TripLocation;
-  timing?: StopTiming;
-  travelToNextMin?: number;
-  isActive: boolean;
-  isDragging: boolean;
-  onMarkerClick: (loc: TripLocation) => void;
-  onDelete: (id: string) => void;
-  onUpdate: (updates: Partial<Pick<TripLocation, "duration_minutes" | "arrival_time" | "transport_mode">>) => Promise<void>;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
-    id: loc.id,
-    data: { dayNumber: loc.day_number },
-  });
-  const [editingTime, setEditingTime] = useState(false);
-  const [draftDuration, setDraftDuration] = useState(loc.duration_minutes != null ? String(loc.duration_minutes) : "");
-  const [draftAnchor, setDraftAnchor] = useState(loc.arrival_time ?? "");
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    padding: "8px 10px",
-    alignItems: "flex-start" as const,
-    cursor: "pointer" as const,
-    opacity: isDragging ? 0.35 : 1,
-  };
-
-  const arrLabel = timing?.arrivalMin != null ? formatMinutes(timing.arrivalMin) : null;
-  const depLabel = timing?.departureMin != null ? formatMinutes(timing.departureMin) : null;
-
-  async function saveTime(e: React.MouseEvent) {
-    e.stopPropagation();
-    const dur = draftDuration.trim() ? parseInt(draftDuration) : null;
-    const anchor = draftAnchor.trim() || null;
-    await onUpdate({ duration_minutes: isNaN(dur as number) ? null : dur, arrival_time: anchor });
-    setEditingTime(false);
-  }
-
-  return (
-    <>
-      <div
-        ref={setNodeRef}
-        style={style}
-        className={`mxj-stop ${isActive ? "is-active" : ""}`}
-        onClick={() => !isDragging && onMarkerClick(loc)}
-      >
-        <span
-          className="mxj-drag-handle"
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-          title="Drag to reorder"
-        >
-          ⠿
-        </span>
-        <span
-          className="mxj-stop-marker"
-          style={{ background: CATEGORY_META[loc.category].color, marginTop: 7, flexShrink: 0 }}
-        />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {loc.name}
-            </span>
-            <span className="mxj-mono" style={{ fontSize: 9, flexShrink: 0 }}>
-              {CATEGORY_META[loc.category].glyph} {CATEGORY_META[loc.category].label}
-            </span>
-          </div>
-          {loc.description && (
-            <div className="mxj-mono" style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {loc.description}
-            </div>
-          )}
-          {/* Time row */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
-            {arrLabel && (
-              <span className="mxj-mono" style={{ fontSize: 10, color: "var(--mxj-accent)" }}>{arrLabel}</span>
-            )}
-            {arrLabel && depLabel && (
-              <span className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-faint)" }}>→</span>
-            )}
-            {depLabel && (
-              <span className="mxj-mono" style={{ fontSize: 10, color: "var(--mxj-muted)" }}>{depLabel}</span>
-            )}
-            {loc.duration_minutes != null && (
-              <span className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-faint)" }}>
-                ({loc.duration_minutes < 60
-                  ? `${loc.duration_minutes}m`
-                  : `${Math.floor(loc.duration_minutes / 60)}h${loc.duration_minutes % 60 ? `${loc.duration_minutes % 60}m` : ""}`})
-              </span>
-            )}
-            <button
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mxj-faint)", fontSize: 10, padding: "0 2px", fontFamily: "var(--mxj-mono)" }}
-              onClick={(e) => { e.stopPropagation(); setEditingTime((v) => !v); }}
-              title="Set time / duration"
-            >
-              {loc.duration_minutes != null || loc.arrival_time ? "✎" : "+ time"}
-            </button>
-          </div>
-          {editingTime && (
-            <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }} onClick={(e) => e.stopPropagation()}>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <label className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-muted)", width: 62 }}>Arrive at</label>
-                <input
-                  className="mxj-input"
-                  type="time"
-                  value={draftAnchor}
-                  onChange={(e) => setDraftAnchor(e.target.value)}
-                  style={{ flex: 1, padding: "3px 6px", fontSize: 11 }}
-                />
-              </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <label className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-muted)", width: 62 }}>Duration</label>
-                <input
-                  className="mxj-input"
-                  type="number"
-                  min="1"
-                  placeholder="minutes"
-                  value={draftDuration}
-                  onChange={(e) => setDraftDuration(e.target.value)}
-                  style={{ flex: 1, padding: "3px 6px", fontSize: 11 }}
-                />
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button className="mxj-btn" style={{ flex: 1, padding: "4px 0", fontSize: 10 }} onClick={saveTime}>Save</button>
-                <button className="mxj-btn mxj-btn-ghost" style={{ flex: 1, padding: "4px 0", fontSize: 10 }} onClick={(e) => { e.stopPropagation(); setEditingTime(false); }}>Cancel</button>
-              </div>
-            </div>
-          )}
-        </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(loc.id); }}
+      {/* ── Mobile sidebar sheet ── */}
+      {showSidebar && (
+        <div
+          className="md:hidden"
           style={{
-            background: "none", border: "none", color: "var(--mxj-faint)",
-            cursor: "pointer", padding: "4px 6px", flexShrink: 0,
-            display: "flex", alignItems: "center",
+            position: "fixed",
+            bottom: 48,
+            left: 0,
+            right: 0,
+            height: "55vh",
+            zIndex: 14,
+            background: "var(--mxj-surface)",
+            borderTop: "1px solid var(--mxj-ink)",
+            display: "flex",
+            flexDirection: "column",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--mxj-danger-text)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mxj-faint)")}
         >
-          {Ico.trash}
-        </button>
-      </div>
-      {/* Travel time connector */}
-      {travelToNextMin !== undefined && (
-        <div style={{ paddingLeft: 44, marginBottom: 2, display: "flex", alignItems: "center", gap: 6 }}>
-          {/* Mode picker for this leg */}
-          {(Object.keys(TRANSPORT_META) as TransportMode[]).map((mode) => {
-            const current: TransportMode = (loc.transport_mode as TransportMode) ?? "walk";
-            return (
-              <button
-                key={mode}
-                title={TRANSPORT_META[mode].label}
-                onClick={(e) => { e.stopPropagation(); onUpdate({ transport_mode: mode }); }}
-                style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  fontSize: 12, padding: "0 1px", lineHeight: 1,
-                  opacity: current === mode ? 1 : 0.25,
-                }}
-              >
-                {TRANSPORT_META[mode].icon}
-              </button>
-            );
-          })}
-          {travelToNextMin > 0 && (
-            <span className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-faint)" }}>
-              {travelToNextMin < 60 ? `${travelToNextMin} min` : `${Math.round(travelToNextMin / 60 * 10) / 10} h`}
-            </span>
+          <div style={{ padding: "10px 0 4px", display: "flex", justifyContent: "center", flexShrink: 0 }}>
+            <div style={{ width: 36, height: 3, background: "var(--mxj-stroke-strong)" }} />
+          </div>
+
+          {activeTab === "map" ? (
+            showAddPin ? (
+              <div className="scrollbar-thin scroll-touch" style={{ flex: 1, overflowY: "auto" }}>
+                <AddPinPanel
+                  tripId={trip.id}
+                  days={displayDays}
+                  onAdd={loc => { setLocations(p => [...p, loc]); setSelectedLocation(loc); }}
+                  onClose={() => setShowAddPin(false)}
+                />
+              </div>
+            ) : (
+              <>
+                <div style={{ borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0 }}>{dayTabs}</div>
+                {itineraryList}
+              </>
+            )
+          ) : activeTab === "reservations" ? (
+            <ReservationsPanel
+              tripId={trip.id}
+              reservations={reservations}
+              onAdd={r => setReservations(p => [...p, r])}
+              onUpdate={(id, u) => setReservations(p => p.map(r => r.id === id ? { ...r, ...u } : r))}
+              onDelete={id => setReservations(p => p.filter(r => r.id !== id))}
+            />
+          ) : activeTab === "budget" ? (
+            <BudgetPanel tripId={trip.id} items={budgetItems} onUpdate={setBudgetItems} />
+          ) : activeTab === "packing" ? (
+            <PackingPanel tripId={trip.id} items={packingItems} onUpdate={setPackingItems} />
+          ) : (
+            <TravelConcierge
+              tripId={trip.id}
+              destination={trip.destination}
+              locations={locations}
+              onAddSuggestion={handleAddSuggestion}
+            />
           )}
         </div>
       )}
-    </>
-  );
-}
-
-// ── Day drop zone ──
-function DayDropZone({ dayNumber, children }: { dayNumber: number; children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `day-${dayNumber}` });
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        borderRadius: 8,
-        transition: "background 0.15s",
-        background: isOver ? "oklch(95% 0.04 225 / 0.2)" : "transparent",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ── Circular icon button ──
-function IconCircle({
-  children, label, size = 42, active, onClick, disabled,
-}: {
-  children: React.ReactNode;
-  label?: string;
-  size?: number;
-  active?: boolean;
-  onClick?: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      className={active ? "mxj-glass-strong" : "mxj-glass"}
-      style={{
-        width: size, height: size, borderRadius: "var(--mxj-r-lg)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: disabled ? "default" : "pointer",
-        color: active ? "var(--mxj-accent)" : "var(--mxj-ink)",
-        border: "1px solid " + (active ? "var(--mxj-accent-border)" : "var(--mxj-stroke)"),
-        background: "none",
-        opacity: disabled ? 0.5 : 1,
-        flexShrink: 0,
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-// ── Add Pin panel ──
-function AddPinPanel({
-  form, onChange, onSubmit, onClose, days, isSubmitting, onPlaceSelectError,
-}: {
-  form: Record<string, string>;
-  onChange: (key: string, value: string) => void;
-  onSubmit: () => void;
-  onClose: () => void;
-  days: number[];
-  isSubmitting?: boolean;
-  onPlaceSelectError?: (error: string) => void;
-}) {
-  const acContainerRef = useRef<HTMLDivElement>(null);
-  const onChangeRef = useRef(onChange);
-  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function attach() {
-      const container = acContainerRef.current;
-      if (!container || cancelled) return;
-      container.innerHTML = "";
-
-      // Use classic Autocomplete — reliable place_changed event with geometry
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (google.maps as any).importLibrary("places");
-      if (cancelled || !acContainerRef.current) return;
-
-      const input = document.createElement("input");
-      input.className = "mxj-input";
-      input.placeholder = "Search for a place…";
-      input.style.width = "100%";
-      input.style.boxSizing = "border-box";
-      acContainerRef.current.innerHTML = "";
-      acContainerRef.current.appendChild(input);
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ac = new (google.maps.places as any).Autocomplete(input, { fields: ["name", "geometry"] });
-      ac.addListener("place_changed", () => {
-        const place = ac.getPlace();
-        if (!place.geometry?.location) return;
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
-        const name: string = place.name ?? input.value;
-        onChangeRef.current("name", name);
-        onChangeRef.current("latitude", String(lat));
-        onChangeRef.current("longitude", String(lng));
-      });
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ready = () => typeof google !== "undefined" && typeof (google.maps as any)?.importLibrary === "function";
-
-    if (ready()) {
-      attach();
-    } else {
-      const intervalId = setInterval(() => {
-        if (ready()) {
-          clearInterval(intervalId);
-          attach();
-        }
-      }, 100);
-      setTimeout(() => {
-        clearInterval(intervalId);
-      }, 15_000);
-    }
-
-    return () => { cancelled = true; };
-  // Intentionally empty deps: re-running would tear down and recreate the
-  // Google Places widget while the user is typing, causing a focus-loss bug.
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const coordsLabel = form.latitude
-    ? `${parseFloat(form.latitude).toFixed(4)}, ${parseFloat(form.longitude).toFixed(4)}`
-    : null;
-
-  const availableDays = days.length > 0 ? days : [1, 2, 3];
-
-  return (
-    <div
-      style={{
-        position: "absolute", inset: 0, zIndex: 40,
-        justifyContent: "center",
-        background: "rgba(0,0,0,0.55)",
-      }}
-      className="animate-fade-in flex items-end md:items-center"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="mxj-glass-strong mxj-sheet-modal"
-        style={{
-          width: "100%", maxWidth: 420,
-          maxHeight: "90vh",
-          overflowY: "auto",
-          display: "flex", flexDirection: "column",
-        }}
-      >
-        {/* Handle */}
-        <div className="md:hidden" style={{ padding: "8px 0", display: "flex", justifyContent: "center", flexShrink: 0 }}>
-          <div style={{ width: 38, height: 4, borderRadius: 2, background: "var(--mxj-stroke-strong)" }} />
-        </div>
-
-        <div style={{ padding: "4px 22px 32px", display: "flex", flexDirection: "column", gap: 20 }}>
-          {/* Header */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2 className="mxj-serif" style={{ fontSize: 24, margin: 0 }}>Add Location</h2>
-            <button
-              onClick={onClose}
-              style={{ background: "none", border: "none", color: "var(--mxj-muted)", cursor: "pointer", padding: 4 }}
-            >
-              {Ico.close}
-            </button>
-          </div>
-
-          {/* Place search */}
-          <div>
-            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Search place</span>
-            <div ref={acContainerRef} className="mxj-place-ac" />
-            {coordsLabel && (
-              <div style={{ marginTop: 6, fontSize: 11, color: "var(--mxj-success)", fontFamily: "var(--mxj-mono)", letterSpacing: "0.1em" }}>
-                ✓ {coordsLabel}
-              </div>
-            )}
-            {/* Manual fallback */}
-            {!form.latitude && (
-              <details style={{ marginTop: 8 }}>
-                <summary style={{ fontSize: 11, fontFamily: "var(--mxj-mono)", color: "var(--mxj-muted)", cursor: "pointer" }}>
-                  Enter coordinates manually
-                </summary>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                  <input
-                    className="mxj-input"
-                    placeholder="Latitude"
-                    type="number"
-                    step="any"
-                    value={form.latitude}
-                    onChange={(e) => onChange("latitude", e.target.value)}
-                  />
-                  <input
-                    className="mxj-input"
-                    placeholder="Longitude"
-                    type="number"
-                    step="any"
-                    value={form.longitude}
-                    onChange={(e) => onChange("longitude", e.target.value)}
-                  />
-                </div>
-              </details>
-            )}
-          </div>
-
-          {/* Day pills */}
-          <div>
-            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Day</span>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {availableDays.map((d) => (
-                <button
-                  key={d}
-                  onClick={() => onChange("day_number", String(d))}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 999,
-                    border: "1px solid",
-                    borderColor: form.day_number === String(d) ? "rgba(232,140,100,0.6)" : "var(--mxj-stroke)",
-                    background: form.day_number === String(d) ? "rgba(232,140,100,0.12)" : "transparent",
-                    color: form.day_number === String(d) ? "var(--mxj-accent)" : "var(--mxj-muted)",
-                    fontFamily: "var(--mxj-sans)", fontSize: 13, fontWeight: 500, cursor: "pointer",
-                  }}
-                >
-                  Day {d}
-                </button>
-              ))}
-              {/* Allow new day */}
-              <button
-                onClick={() => onChange("day_number", String(Math.max(...availableDays) + 1))}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: 999,
-                  border: "1px dashed var(--mxj-stroke)",
-                  background: "transparent",
-                  color: "var(--mxj-faint)",
-                  fontFamily: "var(--mxj-sans)", fontSize: 13, cursor: "pointer",
-                }}
-              >
-                + Day {Math.max(...availableDays) + 1}
-              </button>
-            </div>
-          </div>
-
-          {/* Category chips */}
-          <div>
-            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Category</span>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {CATEGORY_OPTIONS.map((cat) => {
-                const meta = CATEGORY_META[cat];
-                const active = form.category === cat;
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => onChange("category", cat)}
-                    style={{
-                      padding: "6px 14px",
-                      borderRadius: 999,
-                      border: "1px solid",
-                      borderColor: active ? meta.color + "99" : "var(--mxj-stroke)",
-                      background: active ? meta.color + "22" : "transparent",
-                      color: active ? meta.color : "var(--mxj-muted)",
-                      fontFamily: "var(--mxj-sans)", fontSize: 13, fontWeight: 500, cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: 6,
-                    }}
-                  >
-                    <span>{meta.glyph}</span>
-                    <span>{meta.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Notes</span>
-            <textarea
-              value={form.description}
-              onChange={(e) => onChange("description", e.target.value)}
-              placeholder="What to do here, opening hours, tips…"
-              rows={3}
-              className="mxj-input"
-              style={{ resize: "vertical", height: "auto" }}
-            />
-          </div>
-
-          {/* Media URL */}
-          <div>
-            <span className="mxj-mono" style={{ display: "block", marginBottom: 8 }}>Media URL</span>
-            <input
-              type="text"
-              value={form.media_url}
-              onChange={(e) => onChange("media_url", e.target.value)}
-              placeholder="TikTok / Instagram / PDF"
-              className="mxj-input"
-            />
-          </div>
-
-          {/* Actions */}
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={onClose}
-              className="mxj-btn mxj-btn-ghost"
-              style={{ flex: 1, justifyContent: "center", padding: "11px 0" }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onSubmit}
-              disabled={!form.latitude || !form.longitude || isSubmitting}
-              className="mxj-btn mxj-btn-accent"
-              style={{
-                flex: 1, justifyContent: "center", padding: "11px 0",
-                opacity: !form.latitude || !form.longitude || isSubmitting ? 0.4 : 1,
-              }}
-            >
-              {Ico.pin} {isSubmitting ? "Adding…" : "Add pin"}
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

@@ -1,34 +1,50 @@
 "use client";
 
-import { useTransition } from "react";
-import { Trash2 } from "lucide-react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { deleteTrip } from "@/lib/supabase";
 
-interface Props {
-  tripId: string;
-  tripName: string;
-  deleteAction: (formData: FormData) => Promise<void>;
-}
+export default function DeleteTripButton({ tripId }: { tripId: string }) {
+  const router   = useRouter();
+  const [confirm, setConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-export default function DeleteTripButton({ tripId, tripName, deleteAction }: Props) {
-  const [pending, startTransition] = useTransition();
+  async function handleDelete() {
+    setDeleting(true);
+    await deleteTrip(tripId);
+    router.push("/");
+  }
 
-  const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!confirm(`Delete "${tripName}" and all its pins? This cannot be undone.`)) return;
-    const fd = new FormData();
-    fd.append("id", tripId);
-    startTransition(() => deleteAction(fd));
-  };
+  if (!confirm) {
+    return (
+      <button
+        onClick={() => setConfirm(true)}
+        className="mxj-btn mxj-btn-danger"
+        style={{ padding: "9px 16px", fontSize: 12 }}
+      >
+        Delete trip
+      </button>
+    );
+  }
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={pending}
-      aria-label={`Delete ${tripName}`}
-      className="shrink-0 p-2 rounded-lg text-zinc-600 hover:text-red-400 active:text-red-500
-                 hover:bg-red-500/10 active:bg-red-500/15 transition-colors disabled:opacity-40"
-    >
-      <Trash2 className="w-4 h-4" />
-    </button>
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <span className="mxj-mono" style={{ color: "var(--mxj-muted)", fontSize: 11 }}>Confirm?</span>
+      <button
+        onClick={handleDelete}
+        disabled={deleting}
+        className="mxj-btn mxj-btn-danger"
+        style={{ padding: "9px 14px", fontSize: 12 }}
+      >
+        {deleting ? "Deleting…" : "Yes, delete"}
+      </button>
+      <button
+        onClick={() => setConfirm(false)}
+        className="mxj-btn mxj-btn-ghost"
+        style={{ padding: "9px 14px", fontSize: 12 }}
+      >
+        Cancel
+      </button>
+    </div>
   );
 }

@@ -1,239 +1,99 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { Trip, TripLocation, ConciergeSuggestion, ConciergeMessage } from "@/types/trip";
+import type { ConciergeMessage, ConciergeSuggestion, TripLocation } from "@/types/trip";
 
 interface Props {
-  trip: Trip;
+  tripId: string;
+  destination?: string;
   locations: TripLocation[];
-  onSuggestion: (suggestion: ConciergeSuggestion) => void;
-  onClose: () => void;
+  onAddSuggestion?: (s: ConciergeSuggestion) => void;
 }
 
-interface AssistantMessage extends ConciergeMessage {
-  suggestion?: ConciergeSuggestion;
-}
-
-export default function TravelConcierge({ trip, locations, onSuggestion, onClose }: Props) {
-  const [messages, setMessages] = useState<AssistantMessage[]>([
-    {
-      role: "assistant",
-      content: `Ask me for restaurant recommendations, hidden gems, or anything about your itinerary — I'll fly the camera right there.`,
-    },
-  ]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+export default function TravelConcierge({ tripId, destination, locations, onAddSuggestion }: Props) {
+  const [messages, setMessages] = useState<ConciergeMessage[]>([]);
+  const [input, setInput]       = useState("");
+  const [loading, setLoading]   = useState(false);
+  const bottomRef               = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const send = async () => {
+  async function send(e: React.FormEvent) {
+    e.preventDefault();
     const text = input.trim();
     if (!text || loading) return;
-
-    const userMsg: AssistantMessage = { role: "user", content: text };
-    setMessages((prev) => [...prev, userMsg]);
+    const next: ConciergeMessage[] = [...messages, { role: "user", content: text }];
+    setMessages(next);
     setInput("");
     setLoading(true);
-
     try {
       const res = await fetch("/api/concierge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tripName: trip.name,
-          locations,
-          message: text,
-          history: messages.slice(-6),
-        }),
+        body: JSON.stringify({ messages: next, destination, locations }),
       });
-
-      if (!res.ok) throw new Error("API error");
-
       const data = await res.json();
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: data.reasoning,
-        suggestion: data.suggestion,
-      }]);
+      setMessages(m => [...m, { role: "assistant", content: data.reasoning ?? "No response." }]);
+      if (data.suggestion && onAddSuggestion) onAddSuggestion(data.suggestion);
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Sorry, I couldn't reach the AI. Please try again." },
-      ]);
+      setMessages(m => [...m, { role: "assistant", content: "Something went wrong. Try again." }]);
     } finally {
       setLoading(false);
-      inputRef.current?.focus();
     }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-  };
+  }
 
   return (
-    /*
-     * Mobile: full-screen. Desktop: right sidebar below top bar.
-     */
-    <aside className="mxj-concierge-panel mxj-glass-strong animate-fade-in">
-      {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-        padding: "20px 22px 16px",
-        paddingTop: "max(env(safe-area-inset-top, 0px), 20px)",
-        borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0,
-      }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-          {/* Gradient avatar */}
-          <div style={{
-            width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
-            background: "linear-gradient(135deg, #e88c64 0%, #d8a478 100%)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 18,
-          }}>
-            ✦
-          </div>
-          <div>
-            <div className="mxj-serif" style={{ fontSize: 20, lineHeight: 1 }}>Concierge</div>
-            <span className="mxj-mono" style={{ marginTop: 4, display: "block" }}>
-              {locations.length} stop{locations.length !== 1 ? "s" : ""} in context
-            </span>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          style={{
-            background: "none", border: "none", color: "var(--mxj-muted)",
-            cursor: "pointer", padding: 4, display: "flex", alignItems: "center",
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <path d="M3 3l10 10M13 3L3 13" />
-          </svg>
-        </button>
-      </div>
-
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Messages */}
-      <div
-        className="scroll-touch scrollbar-thin"
-        style={{ flex: 1, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}
-      >
-        {messages.map((msg, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
-            <div
-              style={{
-                maxWidth: "85%",
-                padding: "10px 14px",
-                borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "4px 14px 14px 14px",
-                background: msg.role === "user"
-                  ? "rgba(232,140,100,0.15)"
-                  : "rgba(246,239,228,0.06)",
-                border: "1px solid " + (msg.role === "user"
-                  ? "rgba(232,140,100,0.4)"
-                  : "var(--mxj-stroke)"),
-                fontSize: 14, lineHeight: 1.55,
-                color: msg.role === "user" ? "var(--mxj-ink)" : "var(--mxj-ink)",
-              }}
-            >
-              <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{msg.content}</p>
-
-              {msg.suggestion && (
-                <button
-                  onClick={() => onSuggestion(msg.suggestion!)}
-                  className="mxj-btn"
-                  style={{
-                    marginTop: 10, width: "100%", justifyContent: "flex-start",
-                    padding: "8px 12px",
-                    background: "rgba(136,168,192,0.12)",
-                    borderColor: "rgba(136,168,192,0.4)",
-                    color: "var(--mxj-cool)",
-                    fontSize: 12,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "rgba(136,168,192,0.18)";
-                    e.currentTarget.style.borderColor = "rgba(136,168,192,0.5)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "rgba(136,168,192,0.12)";
-                    e.currentTarget.style.borderColor = "rgba(136,168,192,0.4)";
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M8 14s5-4.5 5-9a5 5 0 10-10 0c0 4.5 5 9 5 9z"/><circle cx="8" cy="5.5" r="1.6"/>
-                  </svg>
-                  Fly to {msg.suggestion.name}
-                </button>
-              )}
-            </div>
+      <div className="scrollbar-thin scroll-touch" style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {messages.length === 0 && (
+          <p className="mxj-mono" style={{ color: "var(--mxj-faint)", textAlign: "center", marginTop: 32 }}>
+            Ask the concierge anything about {destination ?? "your destination"}.
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} style={{
+            alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+            maxWidth: "82%",
+            background: m.role === "user" ? "var(--mxj-ink)" : "var(--mxj-surface-2)",
+            color: m.role === "user" ? "var(--mxj-surface)" : "var(--mxj-ink)",
+            border: m.role === "assistant" ? "1px solid var(--mxj-stroke)" : "none",
+            padding: "9px 13px",
+            fontSize: 13,
+            lineHeight: 1.55,
+          }}>
+            {m.content}
           </div>
         ))}
-
         {loading && (
-          <div style={{ display: "flex", justifyContent: "flex-start" }}>
-            <div style={{
-              padding: "10px 16px",
-              borderRadius: "4px 14px 14px 14px",
-              background: "rgba(246,239,228,0.06)",
-              border: "1px solid var(--mxj-stroke)",
-              display: "flex", gap: 5, alignItems: "center",
-            }}>
-              {[0, 1, 2].map((n) => (
-                <span key={n} className="mxj-pulse" style={{
-                  width: 5, height: 5, borderRadius: "50%",
-                  background: "var(--mxj-muted)",
-                  animationDelay: `${n * 0.2}s`,
-                }} />
-              ))}
-            </div>
+          <div style={{ alignSelf: "flex-start", padding: "9px 13px", background: "var(--mxj-surface-2)", border: "1px solid var(--mxj-stroke)" }}>
+            <span className="mxj-mono" style={{ color: "var(--mxj-faint)" }}>thinking…</span>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <div style={{
-        padding: "12px 18px",
-        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)",
-        borderTop: "1px solid var(--mxj-stroke)", flexShrink: 0,
-        display: "flex", gap: 10, alignItems: "center",
-      }}>
+      <form onSubmit={send} style={{ borderTop: "1px solid var(--mxj-stroke)", display: "flex", gap: 0 }}>
         <input
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask about restaurants, hidden gems…"
-          disabled={loading}
           className="mxj-input"
-          style={{ flex: 1, padding: "10px 14px", opacity: loading ? 0.5 : 1 }}
+          style={{ flex: 1, border: "none", padding: "12px 16px", fontSize: 13 }}
+          placeholder="Ask anything…"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          disabled={loading}
         />
         <button
-          onClick={send}
+          type="submit"
           disabled={loading || !input.trim()}
-          style={{
-            width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
-            background: "var(--mxj-accent)", border: "none",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: loading || !input.trim() ? "default" : "pointer",
-            opacity: loading || !input.trim() ? 0.4 : 1,
-            transition: "opacity 0.15s, background 0.15s",
-            color: "#1a1208",
-          }}
-          onMouseEnter={(e) => {
-            if (!loading && input.trim()) e.currentTarget.style.background = "#f29c74";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "var(--mxj-accent)";
-          }}
+          className="mxj-btn mxj-btn-primary"
+          style={{ border: "none", borderLeft: "1px solid var(--mxj-stroke)", padding: "12px 18px", fontSize: 12 }}
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
-            <path d="M2 8L14 2l-4 12-2-5z" />
-          </svg>
+          Send
         </button>
-      </div>
-    </aside>
+      </form>
+    </div>
   );
 }
