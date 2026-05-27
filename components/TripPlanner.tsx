@@ -105,7 +105,6 @@ export default function TripPlanner({
     () => Object.fromEntries(initialDayNotes.map((n) => [n.day_number, n.content]))
   );
   const [activeTab, setActiveTab] = useState<ActiveTab>("map");
-  const [dayTransportModes, setDayTransportModes] = useState<Record<number, TransportMode>>({});
   const [reservations, setReservations] = useState<Reservation[]>(initialReservations);
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>(initialBudgetItems);
   const [packingItems, setPackingItems] = useState<PackingItem[]>(initialPackingItems);
@@ -341,8 +340,7 @@ export default function TripPlanner({
         const dayLocs = byDay[day];
         const dayIdx = days.indexOf(day);
         const dayColor = DAY_PALETTES[dayIdx % DAY_PALETTES.length];
-        const transportMode: TransportMode = dayTransportModes[day] ?? "walk";
-        const timings = computeDayTimeline(dayLocs, transportMode);
+        const timings = computeDayTimeline(dayLocs);
         const timingById = Object.fromEntries(timings.map((t) => [t.locationId, t]));
         return (
           <DayDropZone key={day} dayNumber={day}>
@@ -357,26 +355,7 @@ export default function TripPlanner({
                     <div className="mxj-mono" style={{ marginBottom: 2 }}>Day {day}</div>
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="mxj-mono" style={{ fontSize: 10 }}>{dayLocs.length} stop{dayLocs.length !== 1 ? "s" : ""}</span>
-                  <div style={{ display: "flex", gap: 2 }}>
-                    {(Object.keys(TRANSPORT_META) as TransportMode[]).map((mode) => (
-                      <button
-                        key={mode}
-                        title={TRANSPORT_META[mode].label}
-                        onClick={() => setDayTransportModes((p) => ({ ...p, [day]: mode }))}
-                        style={{
-                          background: transportMode === mode ? "var(--mxj-surface-2)" : "none",
-                          border: "none", cursor: "pointer",
-                          fontSize: 13, padding: "2px 3px", borderRadius: 4,
-                          opacity: transportMode === mode ? 1 : 0.3,
-                        } as React.CSSProperties}
-                      >
-                        {TRANSPORT_META[mode].icon}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <span className="mxj-mono" style={{ fontSize: 10 }}>{dayLocs.length} stop{dayLocs.length !== 1 ? "s" : ""}</span>
               </div>
 
               {/* Day note */}
@@ -397,7 +376,6 @@ export default function TripPlanner({
                         key={loc.id}
                         loc={loc}
                         timing={timing}
-                        transportMode={transportMode}
                         isActive={activeLocation?.id === loc.id}
                         isDragging={activeDragId === loc.id}
                         onMarkerClick={handleMarkerClick}
@@ -575,7 +553,7 @@ export default function TripPlanner({
           transition: "transform 0.3s cubic-bezier(0.16,1,0.3,1)",
         }}
       >
-        <div className="mxj-glass" style={{ borderRadius: 18, display: "flex", flexDirection: "column", overflow: "hidden", height: "100%" }}>
+        <div className="mxj-glass mxj-instrument-panel" style={{ borderRadius: "var(--mxj-r-xl)", display: "flex", flexDirection: "column", overflow: "hidden", height: "100%" }}>
           {/* Desktop tab bar */}
           <div style={{ display: "flex", borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0 }}>
             {(["map", "reservations", "budget", "packing"] as ActiveTab[]).map((tab) => {
@@ -912,17 +890,16 @@ function DayNoteField({
 
 // ── Sortable stop row ──
 function SortableStop({
-  loc, timing, travelToNextMin, transportMode, isActive, isDragging, onMarkerClick, onDelete, onUpdate,
+  loc, timing, travelToNextMin, isActive, isDragging, onMarkerClick, onDelete, onUpdate,
 }: {
   loc: TripLocation;
   timing?: StopTiming;
   travelToNextMin?: number;
-  transportMode?: TransportMode;
   isActive: boolean;
   isDragging: boolean;
   onMarkerClick: (loc: TripLocation) => void;
   onDelete: (id: string) => void;
-  onUpdate: (updates: Partial<Pick<TripLocation, "duration_minutes" | "arrival_time">>) => Promise<void>;
+  onUpdate: (updates: Partial<Pick<TripLocation, "duration_minutes" | "arrival_time" | "transport_mode">>) => Promise<void>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: loc.id,
@@ -1058,14 +1035,31 @@ function SortableStop({
         </button>
       </div>
       {/* Travel time connector */}
-      {travelToNextMin !== undefined && travelToNextMin > 0 && (
-        <div style={{ paddingLeft: 44, marginBottom: 2 }}>
-          <span className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-faint)" }}>
-            {TRANSPORT_META[transportMode ?? "walk"].icon}{" "}
-            {travelToNextMin < 60
-              ? `${travelToNextMin} min`
-              : `${Math.round(travelToNextMin / 60 * 10) / 10} h`}
-          </span>
+      {travelToNextMin !== undefined && (
+        <div style={{ paddingLeft: 44, marginBottom: 2, display: "flex", alignItems: "center", gap: 6 }}>
+          {/* Mode picker for this leg */}
+          {(Object.keys(TRANSPORT_META) as TransportMode[]).map((mode) => {
+            const current: TransportMode = (loc.transport_mode as TransportMode) ?? "walk";
+            return (
+              <button
+                key={mode}
+                title={TRANSPORT_META[mode].label}
+                onClick={(e) => { e.stopPropagation(); onUpdate({ transport_mode: mode }); }}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  fontSize: 12, padding: "0 1px", lineHeight: 1,
+                  opacity: current === mode ? 1 : 0.25,
+                }}
+              >
+                {TRANSPORT_META[mode].icon}
+              </button>
+            );
+          })}
+          {travelToNextMin > 0 && (
+            <span className="mxj-mono" style={{ fontSize: 9, color: "var(--mxj-faint)" }}>
+              {travelToNextMin < 60 ? `${travelToNextMin} min` : `${Math.round(travelToNextMin / 60 * 10) / 10} h`}
+            </span>
+          )}
         </div>
       )}
     </>
@@ -1107,7 +1101,7 @@ function IconCircle({
       title={label}
       className={active ? "mxj-glass-strong" : "mxj-glass"}
       style={{
-        width: size, height: size, borderRadius: "50%",
+        width: size, height: size, borderRadius: "var(--mxj-r-lg)",
         display: "flex", alignItems: "center", justifyContent: "center",
         cursor: disabled ? "default" : "pointer",
         color: active ? "var(--mxj-accent)" : "var(--mxj-ink)",

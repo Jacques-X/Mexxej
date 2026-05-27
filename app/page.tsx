@@ -3,7 +3,6 @@ import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { deleteTrip } from "@/lib/supabase";
 import type { Trip } from "@/types/trip";
-import Logo from "@/components/Logo";
 import DeleteTripButton from "@/components/DeleteTripButton";
 
 async function getTrips(): Promise<Trip[]> {
@@ -54,364 +53,396 @@ export default async function HomePage() {
 
   return (
     <main
+      className="mxj-amber"
       style={{
-        background: "var(--mxj-bg)",
-        color: "var(--mxj-ink)",
+        minHeight: "100vh",
         overflowY: "auto",
         overflowX: "hidden",
-        minHeight: "100vh",
         position: "relative",
       }}
     >
-      {/* Subtle map-grid background */}
-      <div
-        aria-hidden
-        style={{
-          position: "fixed",
-          inset: 0,
-          pointerEvents: "none",
-          zIndex: 0,
-          backgroundImage: `
-            linear-gradient(var(--mxj-stroke) 1px, transparent 1px),
-            linear-gradient(90deg, var(--mxj-stroke) 1px, transparent 1px)
-          `,
-          backgroundSize: "72px 72px",
-          opacity: 0.55,
-        }}
-      />
-
-      {/* Top nav */}
+      {/* ── Nav ───────────────────────────────────────────── */}
       <nav
         className="mxj-page-nav"
         style={{
-          position: "relative",
-          zIndex: 1,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          position: "relative",
+          zIndex: 1,
         }}
       >
-        <Logo size={20} />
+        {/* Wordmark */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 20 20"
+            fill="none"
+            style={{ opacity: 0.7 }}
+          >
+            <circle
+              cx="10" cy="10" r="8.5"
+              stroke="currentColor"
+              strokeWidth="1.2"
+            />
+            <circle cx="10" cy="10" r="2" fill="currentColor" />
+            <path
+              d="M10 2v3M10 15v3M2 10h3M15 10h3"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              strokeLinecap="round"
+            />
+          </svg>
+          <span
+            style={{
+              fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)",
+              fontSize: 22,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: "var(--mxj-ink)",
+              lineHeight: 1,
+            }}
+          >
+            Mexxej
+          </span>
+        </div>
+
         <span
           style={{
             fontSize: 11,
             color: "var(--mxj-faint)",
-            letterSpacing: "0.04em",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
           }}
         >
-          no account · open by link
+          No account required
         </span>
       </nav>
 
-      {/* Main column */}
+      {/* ── Hero ──────────────────────────────────────────── */}
       <div
+        id="create"
         className="mxj-page-col"
         style={{
-          position: "relative",
-          zIndex: 1,
-          maxWidth: 1060,
+          maxWidth: 1180,
           margin: "0 auto",
           display: "flex",
-          flexDirection: "column",
-          gap: 56,
+          alignItems: "center",
+          gap: "clamp(32px, 6vw, 96px)",
+          flexWrap: "wrap",
+          paddingTop: "clamp(24px, 5vw, 56px)",
+          paddingBottom: "clamp(40px, 8vw, 96px)",
         }}
       >
-        {/* ── Hero ─────────────────────────────────────────── */}
+        {/* Left: headline */}
+        <div style={{ flex: "1 1 340px", minWidth: 0 }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)",
+              fontSize: "clamp(60px, 9.5vw, 124px)",
+              fontWeight: 700,
+              lineHeight: 0.92,
+              margin: 0,
+              letterSpacing: "0.01em",
+              textTransform: "uppercase",
+              color: "var(--mxj-ink)",
+            }}
+          >
+            Plan a place,
+            <br />
+            <em
+              style={{
+                fontStyle: "italic",
+                color: "var(--mxj-accent-bg)",
+                fontWeight: 700,
+              }}
+            >
+              share the link.
+            </em>
+          </h1>
+
+          <p
+            style={{
+              fontSize: 15,
+              color: "var(--mxj-muted)",
+              lineHeight: 1.6,
+              marginTop: 24,
+              maxWidth: "42ch",
+              fontWeight: 400,
+            }}
+          >
+            No logins. Build a trip on a 3D map, get a private
+            link — anyone with it can edit in real time.
+          </p>
+        </div>
+
+        {/* Right: form card */}
         <div
-          id="create"
           style={{
+            width: "min(380px, 100%)",
+            background: "var(--mxj-surface)",
+            border: "none",
+            borderRadius: "var(--mxj-r-lg)",
+            padding: "28px 26px",
+            boxShadow: "0 16px 64px oklch(40% 0.15 68 / 0.35), 0 2px 12px oklch(40% 0.15 68 / 0.25)",
             display: "flex",
-            alignItems: "center",
-            gap: "clamp(24px, 5vw, 72px)",
-            flexWrap: "wrap",
-            paddingTop: "clamp(16px, 4vw, 40px)",
+            flexDirection: "column",
+            gap: 14,
           }}
         >
-          {/* Left: headline */}
-          <div style={{ flex: "1 1 280px", minWidth: 0 }}>
-            <div
+          <div style={{ marginBottom: 4 }}>
+            <p
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 11,
+                margin: 0,
+                fontSize: 10,
                 fontWeight: 500,
-                letterSpacing: "0.06em",
+                letterSpacing: "0.10em",
                 textTransform: "uppercase",
-                color: "var(--mxj-accent-deep)",
-                background: "var(--mxj-accent-bg)",
-                padding: "4px 12px",
-                borderRadius: 999,
-                marginBottom: 22,
-                border: "1px solid var(--mxj-accent-border)",
+                color: "var(--mxj-muted)",
+                marginBottom: 6,
+              }}
+            >
+              Start a new trip
+            </p>
+            <h2
+              style={{
+                margin: 0,
+                fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)",
+                fontSize: 28,
+                fontWeight: 600,
+                letterSpacing: "0.02em",
+                textTransform: "uppercase",
+                color: "var(--mxj-ink)",
+                lineHeight: 1,
+              }}
+            >
+              New trip
+            </h2>
+          </div>
+
+          <form
+            action={createTrip}
+            style={{ display: "flex", flexDirection: "column", gap: 8 }}
+          >
+            <input
+              className="mxj-input"
+              name="name"
+              placeholder="Trip name"
+              required
+              autoComplete="off"
+            />
+            <input
+              className="mxj-input"
+              name="destination"
+              placeholder="Destination (optional)"
+              autoComplete="off"
+            />
+            <button
+              type="submit"
+              style={{
+                marginTop: 4,
+                padding: "12px 16px",
+                background: "var(--mxj-ink)",
+                color: "var(--mxj-surface)",
+                border: "none",
+                borderRadius: "var(--mxj-r-md)",
+                fontFamily: "var(--font-sans, 'Barlow', sans-serif)",
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                transition: "opacity 0.12s",
               }}
             >
               <svg
-                width="10"
-                height="10"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
+                width="12" height="12"
+                viewBox="0 0 16 16" fill="none"
+                stroke="currentColor" strokeWidth="2"
                 strokeLinecap="round"
               >
-                <circle cx="6" cy="6" r="5" opacity="0.5" />
-                <circle cx="6" cy="6" r="1.8" fill="currentColor" stroke="none" />
+                <path d="M8 3v10M3 8h10" />
               </svg>
-              Travel planner
-            </div>
+              Create trip
+            </button>
+          </form>
 
-            <h1
-              className="mxj-serif"
-              style={{
-                fontSize: "clamp(44px, 6.5vw, 78px)",
-                lineHeight: 1.0,
-                margin: 0,
-                letterSpacing: "-0.03em",
-                fontWeight: 400,
-              }}
-            >
-              Plan a place,
-              <br />
-              <em style={{ color: "var(--mxj-accent)", fontStyle: "italic" }}>
-                share the link.
-              </em>
-            </h1>
-
-            <p
-              style={{
-                fontSize: 16,
-                color: "var(--mxj-muted)",
-                lineHeight: 1.65,
-                marginTop: 22,
-                maxWidth: "48ch",
-              }}
-            >
-              No accounts, no logins. Build a trip itinerary and get a private
-              link — anyone with it can view and edit in real time.
-            </p>
-          </div>
-
-          {/* Right: create form card */}
           <div
-            className="mxj-glass"
             style={{
-              width: "min(360px, 100%)",
-              borderRadius: "var(--mxj-r-xl)",
-              padding: "28px 24px 24px",
               display: "flex",
-              flexDirection: "column",
-              gap: 14,
+              alignItems: "center",
+              gap: 10,
+              marginTop: 2,
             }}
           >
-            <div>
-              <h2
+            <hr
+              style={{
+                flex: 1,
+                height: 1,
+                background: "var(--mxj-stroke)",
+                border: "none",
+              }}
+            />
+            <span
+              style={{
+                fontSize: 10,
+                color: "var(--mxj-faint)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+              }}
+            >
+              or open existing
+            </span>
+            <hr
+              style={{
+                flex: 1,
+                height: 1,
+                background: "var(--mxj-stroke)",
+                border: "none",
+              }}
+            />
+          </div>
+
+          <form action={openTrip} style={{ display: "flex", gap: 6 }}>
+            <input
+              className="mxj-input"
+              name="id"
+              placeholder="Paste trip ID…"
+              style={{
+                fontFamily: "var(--font-mono, 'JetBrains Mono', monospace)",
+                fontSize: 11,
+              }}
+            />
+            <button
+              type="submit"
+              className="mxj-btn"
+              style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+            >
+              Open
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* ── Recent trips ─────────────────────────────────── */}
+      {trips.length > 0 && (
+        <div
+          className="mxj-page-col"
+          style={{
+            maxWidth: 1180,
+            margin: "0 auto",
+            paddingTop: 0,
+            borderTop: "1px solid var(--mxj-stroke)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              gap: 16,
+              paddingTop: 32,
+              paddingBottom: 24,
+            }}
+          >
+            <h2
+              style={{
+                fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)",
+                fontSize: "clamp(28px, 4vw, 44px)",
+                fontWeight: 600,
+                letterSpacing: "0.02em",
+                textTransform: "uppercase",
+                margin: 0,
+                color: "var(--mxj-ink)",
+              }}
+            >
+              Recent trips
+            </h2>
+            <span
+              style={{
+                fontSize: 10,
+                color: "var(--mxj-faint)",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              {trips.length} trip{trips.length !== 1 ? "s" : ""} · local
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(268px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {trips.map((trip) => (
+              <TripCard
+                key={trip.id}
+                trip={trip}
+                deleteAction={removeTripAction}
+              />
+            ))}
+
+            {/* Add new tile */}
+            <a
+              href="#create"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: 12,
+                minHeight: 160,
+                border: "1px dashed var(--mxj-stroke-strong)",
+                background: "transparent",
+                borderRadius: "var(--mxj-r-lg)",
+                padding: "20px",
+                color: "var(--mxj-muted)",
+                textDecoration: "none",
+                transition: "border-color 0.12s",
+              }}
+            >
+              <div
                 style={{
-                  margin: 0,
-                  fontSize: 15,
+                  width: 32, height: 32,
+                  border: "1px dashed var(--mxj-stroke-strong)",
+                  borderRadius: "var(--mxj-r-sm)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 18,
+                  color: "var(--mxj-faint)",
+                }}
+              >
+                +
+              </div>
+              <span
+                style={{
+                  fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)",
+                  fontSize: 22,
                   fontWeight: 600,
-                  letterSpacing: "-0.01em",
+                  letterSpacing: "0.02em",
+                  textTransform: "uppercase",
                   color: "var(--mxj-ink)",
                 }}
               >
                 New trip
-              </h2>
-              <p
-                style={{
-                  margin: "4px 0 0",
-                  fontSize: 12,
-                  color: "var(--mxj-muted)",
-                }}
-              >
-                Name it, pick a destination, hit create
-              </p>
-            </div>
-
-            <form
-              action={createTrip}
-              style={{ display: "flex", flexDirection: "column", gap: 8 }}
-            >
-              <input
-                className="mxj-input"
-                name="name"
-                placeholder="Trip name"
-                required
-                autoComplete="off"
-              />
-              <input
-                className="mxj-input"
-                name="destination"
-                placeholder="Destination (optional)"
-                autoComplete="off"
-              />
-              <button
-                type="submit"
-                className="mxj-btn mxj-btn-accent"
-                style={{
-                  padding: "12px 16px",
-                  justifyContent: "center",
-                  borderRadius: "var(--mxj-r-md)",
-                  marginTop: 2,
-                }}
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                >
-                  <path d="M8 3v10M3 8h10" />
-                </svg>
-                Create trip
-              </button>
-            </form>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                marginTop: 2,
-              }}
-            >
-              <hr className="mxj-divider" style={{ flex: 1 }} />
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "var(--mxj-faint)",
-                  letterSpacing: "0.04em",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                or open existing
               </span>
-              <hr className="mxj-divider" style={{ flex: 1 }} />
-            </div>
-
-            <form action={openTrip} style={{ display: "flex", gap: 6 }}>
-              <input
-                className="mxj-input"
-                name="id"
-                placeholder="Paste trip ID…"
-                style={{ fontFamily: "var(--mxj-mono)", fontSize: 12 }}
-              />
-              <button
-                type="submit"
-                className="mxj-btn"
-                style={{ whiteSpace: "nowrap", flexShrink: 0 }}
-              >
-                Open
-              </button>
-            </form>
+              <span style={{ fontSize: 12, color: "var(--mxj-muted)", lineHeight: 1.5 }}>
+                Or paste a Mexxej link from a friend.
+              </span>
+            </a>
           </div>
         </div>
-
-        {/* ── Saved trips ──────────────────────────────────── */}
-        {trips.length > 0 && (
-          <>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-                gap: 16,
-              }}
-            >
-              <h2
-                className="mxj-serif"
-                style={{
-                  fontSize: "clamp(26px, 3.5vw, 36px)",
-                  margin: 0,
-                  letterSpacing: "-0.025em",
-                }}
-              >
-                Recent trips
-              </h2>
-              <span style={{ fontSize: 12, color: "var(--mxj-faint)" }}>
-                {trips.length} trip{trips.length !== 1 ? "s" : ""} · stored
-                locally
-              </span>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(272px, 1fr))",
-                gap: 16,
-                marginTop: -24,
-              }}
-            >
-              {trips.map((trip) => (
-                <TripCard
-                  key={trip.id}
-                  trip={trip}
-                  deleteAction={removeTripAction}
-                />
-              ))}
-
-              {/* New trip tile */}
-              <a
-                href="#create"
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                  alignItems: "flex-start",
-                  minHeight: 172,
-                  border: "1.5px dashed var(--mxj-stroke-strong)",
-                  background: "transparent",
-                  borderRadius: "var(--mxj-r-xl)",
-                  padding: "22px 22px",
-                  color: "var(--mxj-muted)",
-                  cursor: "pointer",
-                  textDecoration: "none",
-                  transition: "border-color 0.15s, background 0.15s",
-                }}
-                onMouseEnter={undefined}
-              >
-                <span
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: "50%",
-                    border: "1.5px dashed var(--mxj-stroke-strong)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 18,
-                    color: "var(--mxj-faint)",
-                  }}
-                >
-                  +
-                </span>
-                <span
-                  className="mxj-serif"
-                  style={{
-                    fontSize: 20,
-                    color: "var(--mxj-ink)",
-                    letterSpacing: "-0.02em",
-                    marginTop: 4,
-                  }}
-                >
-                  New trip
-                </span>
-                <span
-                  style={{
-                    fontSize: 13,
-                    color: "var(--mxj-muted)",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  Or paste a Mexxej link from a friend.
-                </span>
-              </a>
-            </div>
-          </>
-        )}
-      </div>
+      )}
     </main>
   );
 }
@@ -425,21 +456,22 @@ function TripCard({
 }) {
   return (
     <div
-      className="mxj-glass mxj-card"
+      className="mxj-card"
       style={{
-        borderRadius: "var(--mxj-r-xl)",
-        padding: 0,
+        background: "var(--mxj-surface)",
+        border: "none",
+        borderRadius: "var(--mxj-r-lg)",
+        overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        overflow: "hidden",
-        cursor: "default",
+        boxShadow: "0 4px 20px oklch(40% 0.15 68 / 0.2)",
       }}
     >
       {/* Photo placeholder */}
       <div
         className="mxj-photo"
         style={{
-          height: 116,
+          height: 110,
           borderRadius: 0,
           border: "none",
           borderBottom: "1px solid var(--mxj-stroke)",
@@ -450,17 +482,16 @@ function TripCard({
         </span>
       </div>
 
-      {/* Content */}
+      {/* Body */}
       <div
         style={{
-          padding: "16px 20px 20px",
+          padding: "14px 18px 18px",
           display: "flex",
           flexDirection: "column",
-          gap: 8,
+          gap: 6,
           flex: 1,
         }}
       >
-        {/* Title row */}
         <div
           style={{
             display: "flex",
@@ -474,12 +505,15 @@ function TripCard({
             style={{ flex: 1, textDecoration: "none", color: "inherit" }}
           >
             <h3
-              className="mxj-serif"
               style={{
+                fontFamily: "var(--font-display, 'Barlow Condensed', sans-serif)",
                 fontSize: 22,
+                fontWeight: 600,
+                letterSpacing: "0.02em",
+                textTransform: "uppercase",
                 margin: 0,
                 lineHeight: 1.1,
-                letterSpacing: "-0.02em",
+                color: "var(--mxj-ink)",
               }}
             >
               {trip.name}
@@ -492,45 +526,52 @@ function TripCard({
           />
         </div>
 
-        {/* Destination */}
         {trip.destination && (
           <span
             style={{
-              fontSize: 12,
+              fontSize: 11,
               color: "var(--mxj-muted)",
-              letterSpacing: "0.01em",
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
             }}
           >
             {trip.destination}
           </span>
         )}
 
-        {/* Footer */}
         <a
           href={`/trip/${trip.id}`}
-          style={{ textDecoration: "none", color: "inherit", marginTop: "auto" }}
+          style={{
+            textDecoration: "none",
+            color: "inherit",
+            marginTop: "auto",
+          }}
         >
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              paddingTop: 12,
+              paddingTop: 10,
               marginTop: 8,
               borderTop: "1px solid var(--mxj-stroke)",
             }}
           >
             <span
               style={{
-                fontSize: 12,
+                fontSize: 10,
                 fontWeight: 600,
                 color: "var(--mxj-accent-deep)",
-                letterSpacing: "-0.01em",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
               }}
             >
-              Open trip →
+              Open →
             </span>
-            <span style={{ fontSize: 11, color: "var(--mxj-faint)" }}>
+            <span
+              className="mxj-mono"
+              style={{ fontSize: 9 }}
+            >
               {formatDate(trip.created_at)}
             </span>
           </div>

@@ -1,16 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { EB_Garamond, Inter, JetBrains_Mono } from "next/font/google";
+import { Barlow, Barlow_Condensed, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const ebGaramond = EB_Garamond({
-  weight: ["400", "500", "600"],
+const barlowCondensed = Barlow_Condensed({
+  weight: ["300", "400", "500", "600", "700"],
   style: ["normal", "italic"],
   subsets: ["latin"],
-  variable: "--font-serif",
+  variable: "--font-display",
   display: "swap",
 });
 
-const inter = Inter({
+const barlow = Barlow({
+  weight: ["400", "500", "600"],
+  style: ["normal"],
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
@@ -43,7 +45,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`h-full ${ebGaramond.variable} ${inter.variable} ${jetbrainsMono.variable}`}
+      className={`h-full ${barlowCondensed.variable} ${barlow.variable} ${jetbrainsMono.variable}`}
     >
       <body className="h-full">{children}</body>
     </html>

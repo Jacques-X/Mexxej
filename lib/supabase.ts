@@ -93,7 +93,7 @@ export async function upsertDayNote(
 
 export async function updateLocation(
   id: string,
-  updates: Partial<Pick<TripLocation, "duration_minutes" | "arrival_time" | "name" | "description" | "category">>
+  updates: Partial<Pick<TripLocation, "duration_minutes" | "arrival_time" | "transport_mode" | "name" | "description" | "category">>
 ): Promise<void> {
   const { error } = await supabase.from("trip_locations").update(updates).eq("id", id);
   if (error) throw new Error(error.message);

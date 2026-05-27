@@ -36,6 +36,7 @@ export interface TripLocation {
   order_index: number;
   duration_minutes?: number | null;
   arrival_time?: string | null;
+  transport_mode?: string | null;
   created_at: string;
 }
 

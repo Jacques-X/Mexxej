@@ -38,25 +38,30 @@ export function formatMinutes(totalMinutes: number): string {
 
 export interface StopTiming {
   locationId: string;
-  arrivalMin: number | null;     // minutes from midnight
+  arrivalMin: number | null;
   departureMin: number | null;
-  travelToNextMin: number;       // walking time to next stop
-  isAnchor: boolean;             // has a user-set arrival_time
+  travelToNextMin: number;
+  isAnchor: boolean;
+  transportMode: TransportMode;
 }
 
-export function computeDayTimeline(stops: TripLocation[], mode: TransportMode = "walk"): StopTiming[] {
+export function computeDayTimeline(stops: TripLocation[]): StopTiming[] {
   if (stops.length === 0) return [];
 
   // Find the first anchor (user-set arrival_time)
   const anchorIdx = stops.findIndex((s) => s.arrival_time);
 
-  const result: StopTiming[] = stops.map((s, i) => ({
-    locationId: s.id,
-    arrivalMin: null,
-    departureMin: null,
-    travelToNextMin: i < stops.length - 1 ? travelMinutes(s, stops[i + 1], mode) : 0,
-    isAnchor: !!s.arrival_time,
-  }));
+  const result: StopTiming[] = stops.map((s, i) => {
+    const mode: TransportMode = (s.transport_mode as TransportMode) ?? "walk";
+    return {
+      locationId: s.id,
+      arrivalMin: null,
+      departureMin: null,
+      travelToNextMin: i < stops.length - 1 ? travelMinutes(s, stops[i + 1], mode) : 0,
+      isAnchor: !!s.arrival_time,
+      transportMode: mode,
+    };
+  });
 
   if (anchorIdx === -1) return result; // no anchor — can't infer anything
 
