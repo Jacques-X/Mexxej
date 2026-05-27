@@ -1113,69 +1113,64 @@ function AddPinPanel({
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
   useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
 
-    function attach() {
+    async function attach() {
       const container = acContainerRef.current;
-      if (!container) return;
+      if (!container || cancelled) return;
       container.innerHTML = "";
 
+      // Places API (New) requires importLibrary, not google.maps.places.*
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const PAE = (google.maps.places as any).PlaceAutocompleteElement;
+      const { PlaceAutocompleteElement } = await (google.maps as any).importLibrary("places");
+      if (cancelled || !acContainerRef.current) return;
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const el: any = new PAE();
-      container.appendChild(el);
+      const el: any = new PlaceAutocompleteElement();
+      acContainerRef.current.innerHTML = "";
+      acContainerRef.current.appendChild(el);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       el.addEventListener("gmp-placeselect", async (e: any) => {
         try {
-          // Places API (New): event.placePrediction → .toPlace() → fetchFields
-          const prediction = e.placePrediction ?? e.place;
-          const place = typeof prediction?.toPlace === "function" ? prediction.toPlace() : prediction;
+          // Places API (New): event.place is a Place object
+          const place = e.place;
           await place.fetchFields({ fields: ["displayName", "location"] });
 
           const name: string = place.displayName ?? "";
-          // location is google.maps.LatLng in Places API (New)
-          const loc = place.location;
-          const lat: number = typeof loc?.lat === "function" ? loc.lat() : loc?.latitude ?? loc?.lat;
-          const lng: number = typeof loc?.lng === "function" ? loc.lng() : loc?.longitude ?? loc?.lng;
+          const loc = place.location; // google.maps.LatLng
+          const lat: number = typeof loc?.lat === "function" ? loc.lat() : Number(loc?.lat);
+          const lng: number = typeof loc?.lng === "function" ? loc.lng() : Number(loc?.lng);
 
-          console.log("[PlaceSelect] name:", name, "lat:", lat, "lng:", lng);
-
-          if (!isFinite(lat) || !isFinite(lng)) {
-            console.error("[PlaceSelect] invalid coords", { loc, lat, lng });
-            return;
-          }
+          if (!isFinite(lat) || !isFinite(lng)) return;
           onChangeRef.current("name", name);
           onChangeRef.current("latitude", String(lat));
           onChangeRef.current("longitude", String(lng));
         } catch (err) {
-          console.error("Failed to select place:", err);
+          console.error("PlaceSelect error:", err);
         }
       });
     }
 
+    // Wait for google.maps to be available then attach
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ready = () => (typeof google !== "undefined" && (google.maps?.places as any)?.PlaceAutocompleteElement);
+    const ready = () => typeof google !== "undefined" && typeof (google.maps as any)?.importLibrary === "function";
 
     if (ready()) {
       attach();
     } else {
-      intervalId = setInterval(() => {
+      const intervalId = setInterval(() => {
         if (ready()) {
-          clearInterval(intervalId!);
-          intervalId = null;
+          clearInterval(intervalId);
           attach();
         }
       }, 100);
       setTimeout(() => {
-        if (intervalId) { clearInterval(intervalId); intervalId = null; }
+        clearInterval(intervalId);
       }, 15_000);
     }
 
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
+    return () => { cancelled = true; };
   // Intentionally empty deps: re-running would tear down and recreate the
   // Google Places widget while the user is typing, causing a focus-loss bug.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
