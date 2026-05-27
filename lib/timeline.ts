@@ -1,12 +1,11 @@
 import type { TripLocation } from "@/types/trip";
 
-export type TransportMode = "walk" | "cycle" | "drive" | "transit";
+export type TransportMode = "walk" | "cycle" | "transit";
 
 export const TRANSPORT_META: Record<TransportMode, { label: string; icon: string; speedKmh: number }> = {
-  walk:    { label: "Walking",  icon: "🚶", speedKmh: 5  },
-  cycle:   { label: "Cycling",  icon: "🚲", speedKmh: 15 },
-  drive:   { label: "Driving",  icon: "🚗", speedKmh: 40 },
-  transit: { label: "Transit",  icon: "🚌", speedKmh: 20 },
+  walk:    { label: "Walking", icon: "🚶", speedKmh: 5  },
+  cycle:   { label: "Cycling", icon: "🚲", speedKmh: 15 },
+  transit: { label: "Transit", icon: "🚌", speedKmh: 20 },
 };
 
 function haversineKm(a: TripLocation, b: TripLocation): number {
@@ -21,7 +20,7 @@ function haversineKm(a: TripLocation, b: TripLocation): number {
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
-function travelMinutes(a: TripLocation, b: TripLocation, mode: TransportMode = "walk"): number {
+function estimatedTravelMinutes(a: TripLocation, b: TripLocation, mode: TransportMode): number {
   return Math.round((haversineKm(a, b) / TRANSPORT_META[mode].speedKmh) * 60);
 }
 
@@ -31,8 +30,9 @@ function parseMinutes(hhmm: string): number {
 }
 
 export function formatMinutes(totalMinutes: number): string {
-  const h = Math.floor(((totalMinutes % 1440) + 1440) % 1440 / 60);
-  const m = ((totalMinutes % 1440) + 1440) % 1440 % 60;
+  const norm = ((totalMinutes % 1440) + 1440) % 1440;
+  const h = Math.floor(norm / 60);
+  const m = norm % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
@@ -40,30 +40,52 @@ export interface StopTiming {
   locationId: string;
   arrivalMin: number | null;
   departureMin: number | null;
+  /** Minutes to travel from this stop to the next (real or estimated) */
   travelToNextMin: number;
   isAnchor: boolean;
   transportMode: TransportMode;
+  /** True if travelToNextMin came from real routing rather than estimate */
+  travelIsReal: boolean;
 }
 
-export function computeDayTimeline(stops: TripLocation[]): StopTiming[] {
+/**
+ * Compute timeline for an ordered list of stops in one day.
+ * @param realTravelMinutes  keyed `${fromId}:${toId}` → real minutes from routing API
+ */
+export function computeDayTimeline(
+  stops: TripLocation[],
+  realTravelMinutes: Record<string, number> = {},
+): StopTiming[] {
   if (stops.length === 0) return [];
 
-  // Find the first anchor (user-set arrival_time)
   const anchorIdx = stops.findIndex((s) => s.arrival_time);
 
   const result: StopTiming[] = stops.map((s, i) => {
-    const mode: TransportMode = (s.transport_mode as TransportMode) ?? "walk";
+    const mode = (s.transport_mode as TransportMode | null | undefined) ?? "walk";
+    const safeMode: TransportMode = (mode === "walk" || mode === "cycle" || mode === "transit") ? mode : "walk";
+    let travelToNextMin = 0;
+    let travelIsReal = false;
+    if (i < stops.length - 1) {
+      const key = `${s.id}:${stops[i + 1].id}`;
+      if (realTravelMinutes[key] != null) {
+        travelToNextMin = realTravelMinutes[key];
+        travelIsReal = true;
+      } else {
+        travelToNextMin = estimatedTravelMinutes(s, stops[i + 1], safeMode);
+      }
+    }
     return {
       locationId: s.id,
       arrivalMin: null,
       departureMin: null,
-      travelToNextMin: i < stops.length - 1 ? travelMinutes(s, stops[i + 1], mode) : 0,
+      travelToNextMin,
       isAnchor: !!s.arrival_time,
-      transportMode: mode,
+      transportMode: safeMode,
+      travelIsReal,
     };
   });
 
-  if (anchorIdx === -1) return result; // no anchor — can't infer anything
+  if (anchorIdx === -1) return result;
 
   // Cascade forward from anchor
   result[anchorIdx].arrivalMin = parseMinutes(stops[anchorIdx].arrival_time!);
@@ -72,7 +94,6 @@ export function computeDayTimeline(stops: TripLocation[]): StopTiming[] {
     if (arr === null) break;
     const dur = stops[i].duration_minutes;
     if (dur == null) {
-      // No duration — cascade stops here
       result[i].departureMin = null;
       break;
     }
@@ -82,7 +103,7 @@ export function computeDayTimeline(stops: TripLocation[]): StopTiming[] {
     }
   }
 
-  // Cascade backward from anchor (for stops before anchor)
+  // Cascade backward from anchor
   for (let i = anchorIdx - 1; i >= 0; i--) {
     const nextArr = result[i + 1].arrivalMin;
     if (nextArr === null) break;

@@ -15,10 +15,12 @@ import type { Trip, TripLocation, DayNote, Reservation, BudgetItem, PackingItem,
 import {
   getLocationsByTrip, addLocation, deleteLocation, reorderLocations,
   getDayNotes, upsertDayNote, uploadMedia,
+  updateLocation,
   getReservations, addReservation, updateReservation, deleteReservation,
   getBudgetItems, addBudgetItem, deleteBudgetItem,
   getPackingItems, addPackingItem, updatePackingItem, deletePackingItem,
 } from "@/lib/supabase";
+import { computeDayTimeline, formatMinutes, TRANSPORT_META, type TransportMode, type StopTiming } from "@/lib/timeline";
 
 import Map3D, { type Map3DHandle } from "./Map3D";
 import InfoCard from "./InfoCard";
@@ -40,67 +42,226 @@ const CAT_OPTIONS: { value: LocationCategory; label: string }[] = [
   { value: "other",      label: "Other"       },
 ];
 
+const MODES: TransportMode[] = ["walk", "cycle", "transit"];
+
+// ── Fetch real travel time ─────────────────────────────────────
+async function fetchTravelTime(
+  from: TripLocation,
+  to: TripLocation,
+  mode: TransportMode,
+): Promise<number | null> {
+  try {
+    const url = `/api/routing?from_lat=${from.latitude}&from_lng=${from.longitude}&to_lat=${to.latitude}&to_lng=${to.longitude}&mode=${mode}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json() as { minutes?: number };
+    return data.minutes ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Sortable stop row ──────────────────────────────────────────
 function SortableStop({
-  loc, isSelected, onClick,
+  loc,
+  next,
+  timing,
+  isSelected,
+  onClick,
+  onUpdateLoc,
 }: {
   loc: TripLocation;
+  next: TripLocation | null;
+  timing: StopTiming | null;
   isSelected: boolean;
   onClick: () => void;
+  onUpdateLoc: (id: string, updates: Partial<TripLocation>) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: loc.id });
 
+  const [editingTime, setEditingTime]     = useState(false);
+  const [editingDur, setEditingDur]       = useState(false);
+  const [tempTime, setTempTime]           = useState(loc.arrival_time ?? "");
+  const [tempDur, setTempDur]             = useState(String(loc.duration_minutes ?? ""));
+
+  const mode: TransportMode = (loc.transport_mode as TransportMode | null) ?? "walk";
+
+  function cycleMode() {
+    const idx  = MODES.indexOf(mode);
+    const next = MODES[(idx + 1) % MODES.length];
+    onUpdateLoc(loc.id, { transport_mode: next });
+    updateLocation(loc.id, { transport_mode: next });
+  }
+
+  function saveTime() {
+    setEditingTime(false);
+    const val = tempTime || undefined;
+    onUpdateLoc(loc.id, { arrival_time: val ?? null });
+    updateLocation(loc.id, { arrival_time: val });
+  }
+
+  function saveDur() {
+    setEditingDur(false);
+    const val = tempDur ? parseInt(tempDur) : undefined;
+    onUpdateLoc(loc.id, { duration_minutes: val ?? null });
+    updateLocation(loc.id, { duration_minutes: val });
+  }
+
+  const arrLabel = timing?.arrivalMin != null ? formatMinutes(timing.arrivalMin) : null;
+  const depLabel = timing?.departureMin != null ? formatMinutes(timing.departureMin) : null;
+
   return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "10px 20px",
-        background: isSelected ? "var(--mxj-surface-2)" : "transparent",
-        borderBottom: "1px solid var(--mxj-stroke)",
-        cursor: "pointer",
-        borderLeft: isSelected ? "2px solid var(--mxj-red)" : "2px solid transparent",
-      }}
-      onClick={onClick}
-    >
-      {/* Drag handle */}
-      <span
-        {...attributes}
-        {...listeners}
-        style={{ cursor: "grab", color: "var(--mxj-faint)", flexShrink: 0, display: "flex", alignItems: "center" }}
-        onClick={e => e.stopPropagation()}
+    <>
+      <div
+        ref={setNodeRef}
+        style={{
+          transform: CSS.Transform.toString(transform),
+          transition,
+          opacity: isDragging ? 0.4 : 1,
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          padding: "10px 20px",
+          background: isSelected ? "var(--mxj-surface-2)" : "transparent",
+          borderBottom: next ? "none" : "1px solid var(--mxj-stroke)",
+          borderLeft: isSelected ? "2px solid var(--mxj-red)" : "2px solid transparent",
+          cursor: "pointer",
+        }}
+        onClick={onClick}
       >
-        <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-          <rect x="0" y="0"  width="3" height="3" rx="0" />
-          <rect x="7" y="0"  width="3" height="3" rx="0" />
-          <rect x="0" y="5.5" width="3" height="3" rx="0" />
-          <rect x="7" y="5.5" width="3" height="3" rx="0" />
-          <rect x="0" y="11" width="3" height="3" rx="0" />
-          <rect x="7" y="11" width="3" height="3" rx="0" />
-        </svg>
-      </span>
+        {/* Drag handle */}
+        <span
+          {...attributes}
+          {...listeners}
+          style={{ cursor: "grab", color: "var(--mxj-faint)", flexShrink: 0, paddingTop: 2, display: "flex", alignItems: "center" }}
+          onClick={e => e.stopPropagation()}
+        >
+          <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+            <rect x="0" y="0"   width="3" height="3" />
+            <rect x="7" y="0"   width="3" height="3" />
+            <rect x="0" y="5.5" width="3" height="3" />
+            <rect x="7" y="5.5" width="3" height="3" />
+            <rect x="0" y="11"  width="3" height="3" />
+            <rect x="7" y="11"  width="3" height="3" />
+          </svg>
+        </span>
 
-      {/* Crosshair marker */}
-      <div className={`mxj-stop-marker${isSelected ? "" : " inactive"}`} />
+        <div className={`mxj-stop-marker${isSelected ? "" : " inactive"}`} style={{ marginTop: 3 }} />
 
-      {/* Label */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--mxj-ink)" }}>
-          {loc.name}
-        </div>
-        {loc.arrival_time && (
-          <div className="mxj-mono" style={{ color: "var(--mxj-muted)", fontSize: 9, marginTop: 2 }}>
-            {loc.arrival_time}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Name */}
+          <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--mxj-ink)" }}>
+            {loc.name}
           </div>
-        )}
+
+          {/* Timing row */}
+          <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap", alignItems: "center" }} onClick={e => e.stopPropagation()}>
+            {/* Arrival time */}
+            {editingTime ? (
+              <input
+                autoFocus
+                type="time"
+                className="mxj-input"
+                style={{ width: 90, fontSize: 11, padding: "2px 6px" }}
+                value={tempTime}
+                onChange={e => setTempTime(e.target.value)}
+                onBlur={saveTime}
+                onKeyDown={e => { if (e.key === "Enter") saveTime(); if (e.key === "Escape") setEditingTime(false); }}
+              />
+            ) : arrLabel ? (
+              <span
+                className="mxj-mono"
+                style={{ fontSize: 10, color: "var(--mxj-ink)", cursor: "text", borderBottom: "1px dashed var(--mxj-stroke-strong)" }}
+                onClick={() => { setTempTime(loc.arrival_time ?? ""); setEditingTime(true); }}
+                title="Click to edit arrival time"
+              >
+                {arrLabel}
+                {depLabel && <> → {depLabel}</>}
+              </span>
+            ) : (
+              <button
+                className="mxj-mono"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mxj-faint)", fontSize: 9, padding: 0 }}
+                onClick={() => { setTempTime(""); setEditingTime(true); }}
+              >
+                + set time
+              </button>
+            )}
+
+            {/* Duration */}
+            {editingDur ? (
+              <input
+                autoFocus
+                type="number"
+                min="0"
+                className="mxj-input"
+                style={{ width: 60, fontSize: 11, padding: "2px 6px" }}
+                value={tempDur}
+                placeholder="min"
+                onChange={e => setTempDur(e.target.value)}
+                onBlur={saveDur}
+                onKeyDown={e => { if (e.key === "Enter") saveDur(); if (e.key === "Escape") setEditingDur(false); }}
+              />
+            ) : loc.duration_minutes ? (
+              <span
+                className="mxj-mono"
+                style={{ fontSize: 9, color: "var(--mxj-muted)", cursor: "text" }}
+                onClick={() => { setTempDur(String(loc.duration_minutes ?? "")); setEditingDur(true); }}
+                title="Click to edit duration"
+              >
+                {loc.duration_minutes}min
+              </span>
+            ) : (
+              <button
+                className="mxj-mono"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mxj-faint)", fontSize: 9, padding: 0 }}
+                onClick={() => { setTempDur(""); setEditingDur(true); }}
+              >
+                + duration
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* Travel connector to next stop */}
+      {next && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "5px 20px 5px 42px",
+            borderBottom: "1px solid var(--mxj-stroke)",
+            background: "var(--mxj-base)",
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Mode toggle button */}
+          <button
+            onClick={cycleMode}
+            title={`Mode: ${TRANSPORT_META[mode].label} — click to change`}
+            style={{ background: "none", border: "1px solid var(--mxj-stroke)", cursor: "pointer", fontSize: 13, padding: "2px 6px", lineHeight: 1 }}
+          >
+            {TRANSPORT_META[mode].icon}
+          </button>
+
+          {/* Travel time */}
+          {timing && (
+            <span className="mxj-mono" style={{ fontSize: 9, color: timing.travelIsReal ? "var(--mxj-muted)" : "var(--mxj-faint)" }}>
+              {timing.travelToNextMin}min
+              {!timing.travelIsReal && <span style={{ opacity: 0.6 }}> ~est</span>}
+            </span>
+          )}
+
+          {/* Mode label */}
+          <span className="mxj-mono" style={{ fontSize: 8, color: "var(--mxj-faint)", letterSpacing: "0.06em" }}>
+            {TRANSPORT_META[mode].label.toUpperCase()}
+          </span>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -133,7 +294,6 @@ function AddPinPanel({
     inputRef.current?.focus();
   }, []);
 
-  // Google Places autocomplete
   useEffect(() => {
     if (!inputRef.current || typeof google === "undefined") return;
     const ac = new google.maps.places.Autocomplete(inputRef.current, { fields: ["geometry", "name"] });
@@ -166,7 +326,7 @@ function AddPinPanel({
         description: desc || undefined,
         arrival_time: arrival || undefined,
         duration_minutes: duration ? parseInt(duration) : undefined,
-        transport_mode: undefined, media_url: undefined,
+        transport_mode: "walk", media_url: undefined,
       });
       if (loc) { onAdd(loc); onClose(); }
     } catch {
@@ -253,14 +413,17 @@ function AddPinPanel({
 
 // ── Main planner ───────────────────────────────────────────────
 export default function TripPlanner({ trip }: { trip: Trip }) {
-  const mapRef            = useRef<Map3DHandle>(null);
-  const apiKey            = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+  const mapRef = useRef<Map3DHandle>(null);
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
   const [locations, setLocations]         = useState<TripLocation[]>([]);
   const [dayNotes, setDayNotes]           = useState<DayNote[]>([]);
   const [reservations, setReservations]   = useState<Reservation[]>([]);
   const [budgetItems, setBudgetItems]     = useState<BudgetItem[]>([]);
   const [packingItems, setPackingItems]   = useState<PackingItem[]>([]);
+
+  // Real travel time cache: `${fromId}:${toId}` → minutes
+  const [travelTimes, setTravelTimes] = useState<Record<string, number>>({});
 
   const [selectedLocation, setSelectedLocation] = useState<TripLocation | null>(null);
   const [streetViewLoc, setStreetViewLoc]       = useState<TripLocation | null>(null);
@@ -270,15 +433,20 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   const [activeDay, setActiveDay]               = useState<number | null>(null);
   const [copied, setCopied]                     = useState(false);
 
-  // Data load
+  // Data load — allSettled so one missing table never blocks the rest
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       getLocationsByTrip(trip.id),
       getDayNotes(trip.id),
       getReservations(trip.id),
       getBudgetItems(trip.id),
       getPackingItems(trip.id),
-    ]).then(([locs, notes, res, budget, packing]) => {
+    ]).then(([locsR, notesR, resR, budgetR, packingR]) => {
+      const locs    = locsR.status    === "fulfilled" ? locsR.value    : [];
+      const notes   = notesR.status   === "fulfilled" ? notesR.value   : [];
+      const res     = resR.status     === "fulfilled" ? resR.value     : [];
+      const budget  = budgetR.status  === "fulfilled" ? budgetR.value  : [];
+      const packing = packingR.status === "fulfilled" ? packingR.value : [];
       setLocations(locs);
       setDayNotes(notes);
       setReservations(res);
@@ -288,9 +456,54 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
     });
   }, [trip.id]);
 
+  // Fetch real travel times for all consecutive pairs
+  useEffect(() => {
+    const days = [...new Set(locations.map(l => l.day_number))];
+    days.forEach(d => {
+      const dayLocs = locations
+        .filter(l => l.day_number === d)
+        .sort((a, b) => a.order_index - b.order_index);
+      for (let i = 0; i < dayLocs.length - 1; i++) {
+        const from = dayLocs[i];
+        const to   = dayLocs[i + 1];
+        const mode = (from.transport_mode as TransportMode | null) ?? "walk";
+        const key  = `${from.id}:${to.id}`;
+        // Only fetch if not already cached for this mode
+        const cacheKey = `${key}:${mode}`;
+        if ((window as unknown as Record<string, boolean>)[`rt_${cacheKey}`]) continue;
+        (window as unknown as Record<string, boolean>)[`rt_${cacheKey}`] = true;
+        fetchTravelTime(from, to, mode).then(mins => {
+          if (mins != null) {
+            setTravelTimes(prev => ({ ...prev, [key]: mins }));
+          }
+        });
+      }
+    });
+  }, [locations]);
+
   const days        = [...new Set(locations.map(l => l.day_number))].sort((a, b) => a - b);
   const displayDays = days.length ? days : [1];
   const filteredLocs = activeDay !== null ? locations.filter(l => l.day_number === activeDay) : locations;
+
+  // Update a location in local state and invalidate cached travel times for its legs
+  function handleUpdateLoc(id: string, updates: Partial<TripLocation>) {
+    setLocations(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
+    // If transport_mode changed, clear cached travel times for legs involving this stop
+    if (updates.transport_mode != null) {
+      setTravelTimes(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(k => {
+          const [fromId] = k.split(":");
+          if (fromId === id) delete next[k];
+        });
+        // Also clear window cache flag so it re-fetches
+        Object.keys(window).forEach(k => {
+          if (k.startsWith(`rt_${id}:`)) delete (window as unknown as Record<string, unknown>)[k];
+        });
+        return next;
+      });
+    }
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -342,11 +555,14 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   };
 
   // ── Itinerary list ──
+  const sortedFilteredLocs = [...filteredLocs].sort((a, b) => a.order_index - b.order_index);
+  const dayTimeline = computeDayTimeline(sortedFilteredLocs, travelTimes);
+
   const itineraryList = (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={filteredLocs.map(l => l.id)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={sortedFilteredLocs.map(l => l.id)} strategy={verticalListSortingStrategy}>
         <div className="scrollbar-thin scroll-touch" style={{ flex: 1, overflowY: "auto" }}>
-          {filteredLocs.length === 0 ? (
+          {sortedFilteredLocs.length === 0 ? (
             <div style={{ padding: "32px 20px", textAlign: "center" }}>
               <p className="mxj-mono" style={{ color: "var(--mxj-faint)" }}>No stops on this day.</p>
               <button onClick={() => setShowAddPin(true)} className="mxj-btn mxj-btn-ghost" style={{ marginTop: 12, padding: "9px 16px", fontSize: 12 }}>
@@ -354,12 +570,15 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
               </button>
             </div>
           ) : (
-            filteredLocs.map(loc => (
+            sortedFilteredLocs.map((loc, i) => (
               <SortableStop
                 key={loc.id}
                 loc={loc}
+                next={sortedFilteredLocs[i + 1] ?? null}
+                timing={dayTimeline[i] ?? null}
                 isSelected={selectedLocation?.id === loc.id}
                 onClick={() => handleMarkerClick(loc)}
+                onUpdateLoc={handleUpdateLoc}
               />
             ))
           )}
@@ -426,16 +645,15 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
         padding: "0 16px",
         gap: 16,
       }}>
-        {/* Sidebar toggle */}
         <button
           onClick={() => setShowSidebar(p => !p)}
           style={{ background: "none", border: "1px solid var(--mxj-stroke-strong)", cursor: "pointer", color: "var(--mxj-muted)", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
           aria-label={showSidebar ? "Hide sidebar" : "Show sidebar"}
         >
           <svg width="12" height="10" viewBox="0 0 12 10" fill="currentColor">
-            <rect x="0" y="0"  width="12" height="1.5" />
+            <rect x="0" y="0"    width="12" height="1.5" />
             <rect x="0" y="4.25" width="12" height="1.5" />
-            <rect x="0" y="8.5" width="12" height="1.5" />
+            <rect x="0" y="8.5"  width="12" height="1.5" />
           </svg>
         </button>
 
@@ -448,11 +666,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
         </div>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-          <button
-            onClick={copyShareLink}
-            className="mxj-btn mxj-btn-ghost"
-            style={{ padding: "6px 12px", fontSize: 11 }}
-          >
+          <button onClick={copyShareLink} className="mxj-btn mxj-btn-ghost" style={{ padding: "6px 12px", fontSize: 11 }}>
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square">
               <rect x="2" y="5" width="9" height="9" /><path d="M5 5V3h8v8h-2" />
             </svg>
@@ -473,9 +687,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
         className="mxj-desktop"
         style={{
           position: "absolute",
-          top: 48,
-          bottom: 0,
-          left: 0,
+          top: 48, bottom: 0, left: 0,
           width: 360,
           zIndex: 4,
           flexDirection: "column",
@@ -527,7 +739,6 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
               </div>
             ) : (
               <>
-                {/* Day tabs + add */}
                 <div style={{ borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0, display: "flex", alignItems: "center" }}>
                   <div style={{ flex: 1, overflow: "hidden" }}>{dayTabs}</div>
                   <button
@@ -614,9 +825,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
           className="mxj-mobile"
           style={{
             position: "fixed",
-            bottom: 48,
-            left: 0,
-            right: 0,
+            bottom: 48, left: 0, right: 0,
             height: "55vh",
             zIndex: 14,
             background: "var(--mxj-surface)",

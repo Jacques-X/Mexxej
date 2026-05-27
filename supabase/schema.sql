@@ -37,6 +37,7 @@ create table if not exists trip_locations (
   order_index        integer     not null default 0,
   duration_minutes   integer,
   arrival_time       text,       -- "HH:MM" anchor; null = inferred
+  transport_mode     text,       -- walk | cycle | transit; null = walk
   created_at         timestamptz default now()
 );
 
@@ -62,6 +63,9 @@ create policy "public_insert_trips"
 
 create policy "public_update_trips"
   on trips for update using (true);
+
+create policy "public_delete_trips"
+  on trips for delete using (true);
 
 -- Locations: full CRUD (kiosk adds pins, mobile reads them)
 create policy "public_read_locations"
