@@ -1116,19 +1116,25 @@ function AddPinPanel({
     let cancelled = false;
 
     async function attach() {
+      console.log("[PAC] attach() called, cancelled=", cancelled, "container=", acContainerRef.current);
       const container = acContainerRef.current;
       if (!container || cancelled) return;
       container.innerHTML = "";
 
       // Places API (New) requires importLibrary, not google.maps.places.*
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { PlaceAutocompleteElement } = await (google.maps as any).importLibrary("places");
+      const lib = await (google.maps as any).importLibrary("places");
+      console.log("[PAC] importLibrary result keys:", Object.keys(lib));
+      const PlaceAutocompleteElement = lib.PlaceAutocompleteElement;
+      console.log("[PAC] PlaceAutocompleteElement:", PlaceAutocompleteElement);
       if (cancelled || !acContainerRef.current) return;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const el: any = new PlaceAutocompleteElement();
+      console.log("[PAC] element created:", el);
       acContainerRef.current.innerHTML = "";
       acContainerRef.current.appendChild(el);
+      console.log("[PAC] element appended, adding event listener");
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       el.addEventListener("gmp-placeselect", async (e: any) => {
@@ -1162,6 +1168,7 @@ function AddPinPanel({
     // Wait for google.maps to be available then attach
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ready = () => typeof google !== "undefined" && typeof (google.maps as any)?.importLibrary === "function";
+    console.log("[PAC] ready on mount:", ready());
 
     if (ready()) {
       attach();
