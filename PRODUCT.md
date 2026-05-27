@@ -1,36 +1,79 @@
-# Mexxej — Product Context
+# PRODUCT.md — Mexxej product context
 
-## Product Purpose
+## Product purpose
 
-Mexxej (Maltese for "guide / leader") is a collaborative travel itinerary planner. Users build multi-day trip itineraries on an immersive 3D satellite map, organize stops by day, track budgets and reservations, and share the trip via a secret URL — no accounts required.
+Mexxej (Maltese: "guide / leader") is a collaborative group trip planner built
+around a live Google satellite map. The core loop: create a trip, drop pins by
+day, share a link — everyone in the group edits the same map, no account needed.
 
 ## Users
 
-Travelers (solo, couples, small groups) planning leisure trips. They open the tool on a laptop at home — Sunday morning, kitchen table, coffee in hand — before the trip begins. They are comfortable with web tools but not technical. They value speed, clarity, and a feeling of confident anticipation.
+Small groups (2-6 people) planning leisure trips together. Opened on a laptop
+at home — Sunday morning, kitchen table — before the trip begins. Comfortable
+with web tools but not technical. They want speed, clarity, and the feeling of
+having a plan.
 
 ## Register
 
-product
+Product (task-focused). The map is the product. The UI serves the map — it does
+not compete with it.
 
-## Brand voice
+## Features
 
-Warm, efficient, quietly confident. Not playful. Not corporate. A well-designed expedition journal made digital.
+**Core**
+- Create a trip with a name and destination
+- Drop location pins on the 3D satellite map, organised by day
+- Drag-to-reorder stops within a day
+- Click a pin to open the info card (name, category, description, coordinates, navigate button)
+- Street View portal for any stop
+- Share the trip via URL — anyone with the link can view and edit
 
-## Anti-references
+**Panels (accessible via sidebar tabs)**
+- Route: day-by-day stop list with crosshair markers and arrival times
+- Bookings: flight/hotel/restaurant/activity reservations with status cycling
+- Budget: expense tracker by category with running total
+- Packing: checklist with progress bar, per-category grouping
+- Concierge: AI assistant (Gemini 2.0 Flash) that suggests stops and can add them
 
-- Dark glassmorphic travel apps (Wanderlog dark mode, Maps.me)
+**Ready but not wired into UI**
+- Day timeline inference: haversine travel-time calculation between stops,
+  cascade from arrival anchors (lib/timeline.ts)
+- Cinematic flyover: screen-capture the tab while the camera orbits each stop
+  and export as .webm (lib/cinematicFlyover.ts)
+
+## Design — Survey aesthetic
+
+**Reference:** Ordnance Survey maps, aviation sectional charts, Swiss Federal
+Railways signage. Precision instruments. Things where information density is a
+virtue and decoration is a liability.
+
+**Palette:** Cool white base + ink black + ordnance survey red (oklch 50% 0.22 24).
+Red is the only chromatic colour — used exclusively for active states, labels,
+and primary CTAs.
+
+**Typography:** Big Shoulders Display 900 for all headings and the wordmark.
+system-ui for body. JetBrains Mono for coordinates, labels, and metadata.
+Uppercase and tight tracking throughout — no italic, no decorative serif.
+
+**Geometry:** 0-2px border-radius across the entire UI. Square buttons, square
+chips, square pins. The crosshair stop marker (a square with cross lines) is
+the visual signature of the design.
+
+**Anti-references:**
+- Dark glassmorphic travel apps (Wanderlog, Maps.me dark mode)
 - White SaaS minimalism (Notion-style, Airtable-style)
-- Editorial-magazine aesthetics (drop caps, broadsheet grids, Fraunces headlines)
-- Navy + gold "luxury travel" clichés
+- Editorial magazine aesthetics (Fraunces/Newsreader headlines, broadsheet grids)
+- Navy + gold luxury travel clichés
+- Warm parchment / amber instrument panel (prior iterations of this project)
 
-## Color strategy
+## Tech stack
 
-Restrained on the trip planner; Committed on the home page. Warm parchment background, terracotta accent. Light solid panels over the dark satellite map — the contrast is intentional.
+Next.js 15 App Router · TypeScript · Supabase (Postgres + Realtime + Storage)
+· @vis.gl/react-google-maps · Gemini 2.0 Flash · Tailwind CSS 3.4 · dnd-kit
 
-## Typography
+## What makes it unusual
 
-EB Garamond for display headings (warm, classical, not Fraunces). Inter / system-ui for all UI labels, buttons, data.
-
-## Scene sentence
-
-A traveler at their kitchen table on a Sunday morning, laptop open, planning a long weekend in Valletta. Coffee getting cold. Natural light. A feeling of focused anticipation — they know where they're going, they're just mapping how.
+Most travel apps start from "what should a travel app feel like" and land
+somewhere familiar. Mexxej starts from the map. It is a cartographic instrument
+that happens to plan trips — the UI looks like it belongs in a map room, not a
+travel magazine.

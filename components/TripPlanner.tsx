@@ -399,14 +399,16 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh", overflow: "hidden", background: "var(--mxj-base)" }}>
 
-      {/* ── Map ── */}
-      <Map3D
-        ref={mapRef}
-        apiKey={apiKey}
-        locations={locations}
-        onMarkerClick={handleMarkerClick}
-        destination={trip.destination}
-      />
+      {/* ── Map — fills entire viewport ── */}
+      <div style={{ position: "absolute", inset: 0 }}>
+        <Map3D
+          ref={mapRef}
+          apiKey={apiKey}
+          locations={locations}
+          onMarkerClick={handleMarkerClick}
+          destination={trip.destination}
+        />
+      </div>
 
       {/* ── Street view overlay ── */}
       {streetViewLoc && (
@@ -468,7 +470,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
 
       {/* ── Desktop sidebar ── */}
       <div
-        className="hidden md:flex"
+        className="mxj-desktop"
         style={{
           position: "absolute",
           top: 48,
@@ -575,7 +577,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
 
       {/* ── Mobile bottom nav ── */}
       <nav
-        className="md:hidden"
+        className="mxj-mobile"
         style={{
           position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 15,
           background: "var(--mxj-surface)",
@@ -609,7 +611,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
       {/* ── Mobile sidebar sheet ── */}
       {showSidebar && (
         <div
-          className="md:hidden"
+          className="mxj-mobile"
           style={{
             position: "fixed",
             bottom: 48,
