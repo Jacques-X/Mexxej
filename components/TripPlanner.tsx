@@ -593,6 +593,9 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
         const departTime = getStopDepartTime(from);
 
         fetchRouteInfo(from, to, mode, departDate, departTime).then(info => {
+          if (mode === "transit") {
+            console.log("[routing transit]", key, "->", info ? `${info.minutes}min, ${info.legs?.length ?? 0} legs` : "null", {departDate, departTime, legs: info?.legs});
+          }
           if (info != null) {
             setTravelTimes(prev => ({ ...prev, [key]: info.minutes }));
             if (info.legs) {

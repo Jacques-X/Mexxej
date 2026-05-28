@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
         arriveTime: leg.endTime ?? undefined,
       }));
 
+      console.log("[routing/transit] legs:", legs.length, legs.map(l => `${l.mode} ${l.minutes}m ${l.route ?? ""}`).join(" | "));
       return NextResponse.json({
         minutes: Math.ceil(itinerary.duration / 60),
         real: true,
