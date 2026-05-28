@@ -9,7 +9,7 @@ known gotchas, and patterns not obvious from code alone.
 
 **Mexxej** (Maltese: "guide / leader") is a collaborative group trip planner.
 No accounts. Users create a trip, drop pins on a live Google satellite map,
-organise stops by day, track bookings and budget, and share via a secret URL.
+organise stops by day, track bookings, and share via a secret URL.
 
 **Stack:** Next.js 15 App Router · TypeScript · Supabase (Postgres + Storage)
 · @vis.gl/react-google-maps · Gemini 2.0 Flash (AI concierge) · Tailwind CSS 3.4
@@ -36,7 +36,8 @@ components/
   InfoCard.tsx             <- Floating location detail card
   StreetViewPortal.tsx     <- Full-screen street view overlay
   Logo.tsx                 <- Wordmark with survey dot
-  BudgetPanel.tsx / ReservationsPanel.tsx / PackingPanel.tsx / TravelConcierge.tsx
+  ReservationsPanel.tsx / TravelConcierge.tsx
+  BudgetPanel.tsx / PackingPanel.tsx  <- COMPONENTS EXIST but tabs removed from UI
   MediaMoodBoard.tsx / DeleteTripButton.tsx
 
 lib/
@@ -195,6 +196,119 @@ TripPlanner calls it per day and renders arrival/departure times inline.
 Users can click any time or duration to edit it in-place; blur saves to DB.
 Anchor: the first stop with arrival_time set; times cascade forward and backward.
 
+### 10. StreetViewPortal exit button — zIndex required
+
+The Google Street View panorama renders a full DOM layer that sits above
+everything. The controls bar div must have zIndex: 10 and pointerEvents: "auto"
+or the close button is unreachable.
+
+```tsx
+<div style={{
+  position: "absolute", top: 16, left: 16, zIndex: 10,
+  display: "flex", alignItems: "center", gap: 10,
+  pointerEvents: "auto",
+}}>
+```
+
+---
+
+## Data loading pattern — Promise.allSettled
+
+TripPlanner loads from three tables on mount. Use `Promise.allSettled` so that
+one missing or RLS-failing table does not silently block the others.
+
+```ts
+Promise.allSettled([
+  getLocationsByTrip(trip.id),
+  getDayNotes(trip.id),
+  getReservations(trip.id),
+]).then(([locsR, notesR, resR]) => {
+  const locs  = locsR.status  === "fulfilled" ? locsR.value  : [];
+  const notes = notesR.status === "fulfilled" ? notesR.value : [];
+  const res   = resR.status   === "fulfilled" ? resR.value   : [];
+  setLocations(locs); setDayNotes(notes); setReservations(res);
+  if (locs.length) setActiveDay(locs[0].day_number);
+});
+```
+
+Never use `Promise.all` for multi-table loads — one rejection kills everything.
+
+---
+
+## Fire-and-forget DB writes — always add .catch
+
+Inline edits (drag reorder, time edit, transport mode, stop edit, day note)
+optimistically update state first and fire the DB write in the background.
+These must never silently swallow errors:
+
+```ts
+updateLocation(id, patch).catch(console.error);   // ✓
+reorderLocations(updates).catch(console.error);   // ✓
+upsertDayNote(tripId, day, text).catch(console.error); // ✓ (called in debounce)
+```
+
+For destructive operations (delete), always await and guard state update:
+
+```ts
+async function handleDeleteLocation(id: string) {
+  try {
+    await deleteLocation(id);
+  } catch {
+    return; // DB failed — leave UI unchanged
+  }
+  setLocations(prev => prev.filter(l => l.id !== id));
+}
+```
+
+---
+
+## TripPlanner sidebar tabs
+
+ActiveTab = `"map" | "reservations" | "concierge"`.
+Budget and packing tabs were removed from the UI (components still exist).
+The `···` overflow menu in the top bar exposes DeleteTripButton.
+
+---
+
+## Day notes — debounced upsert
+
+Per-day notes are stored in `trip_day_notes` (UNIQUE on trip_id + day_number).
+The textarea fires `handleDayNoteChange` which debounces 600ms then calls
+`upsertDayNote`. Debounce timers are held in `noteTimers = useRef<Record<number, ...>>({})`.
+
+---
+
+## Add Day button
+
+The sidebar day tabs row includes a `+ Day` button. It appends to `extraDays`
+state (number[]). `displayDays` merges DB-derived days with extraDays:
+
+```ts
+const displayDays = [...new Set([...(days.length ? days : [1]), ...extraDays])]
+  .sort((a, b) => a - b);
+```
+
+An extra day with no stops is valid — it just shows an empty itinerary.
+
+---
+
+## Inline stop editing (SortableStop)
+
+The `SortableStop` component inside TripPlanner has an `editing` boolean state.
+When active: drag handle is hidden, the name/timing row is replaced by an inline
+form (name input, category select, description textarea, Save/Cancel buttons).
+`saveEdit` calls `updateLocation` and falls back gracefully on error. Clicking
+outside does not save — user must press Save or Cancel.
+
+---
+
+## Concierge → Add Pin pre-fill
+
+When the concierge returns a suggestion and the user clicks "Add to trip",
+`handleAddSuggestion` sets `pendingSuggestion` and opens AddPinPanel. The panel
+receives `initialValues` (name, lat, lng, category) and skips the geocoding
+step (`coordConfirm` starts `true`). On close the `pendingSuggestion` is cleared.
+
 ---
 
 ## Database
@@ -232,6 +346,32 @@ trip_budget_items
 trip_packing_items
   id, trip_id FK->trips CASCADE, category, name, packed,
   assigned_to, order_index
+```
+
+All FK tables use `ON DELETE CASCADE` — deleting a trip removes all child rows.
+Do NOT manually delete child rows before deleting the trip.
+
+### lib/supabase.ts — key helpers
+
+All DB access must go through this file. Key helpers:
+
+```ts
+createTrip(name, destination)    -> Trip   // generates secret_token via crypto.randomUUID()
+getTripById(id)                  -> Trip | null
+getTripsByIds(ids)               -> Trip[] // used by home page recent trips
+updateTrip(id, updates)          -> Trip
+deleteTrip(id)                   -> void   // CASCADE handles children — no manual cleanup
+getLocationsByTrip(tripId)       -> TripLocation[]
+addLocation(payload)             -> TripLocation
+updateLocation(id, updates)      -> TripLocation
+deleteLocation(id)               -> void
+reorderLocations(updates)        -> void   // bulk order_index update
+getDayNotes(tripId)              -> TripDayNote[]
+upsertDayNote(tripId, day, text) -> TripDayNote
+getReservations(tripId)          -> Reservation[]
+addReservation(payload)          -> Reservation
+updateReservation(id, updates)   -> Reservation
+deleteReservation(id)            -> void
 ```
 
 ### Storage
@@ -304,3 +444,6 @@ does not always re-evaluate CSS changes.
 - Place Map3D as an in-flow child — always wrap in position:absolute inset:0
 - Remove the tiles proxy route
 - Call supabase directly from components — always go through lib/supabase.ts
+- Use Promise.all for multi-table loads — use Promise.allSettled
+- Swallow DB errors silently — always .catch(console.error) on fire-and-forget writes
+- Delete child rows manually before deleting a trip — CASCADE handles it

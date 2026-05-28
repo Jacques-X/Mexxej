@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { createTrip, getTripsByIds } from "@/lib/supabase";
 import type { Trip } from "@/types/trip";
 import Logo from "@/components/Logo";
 
@@ -19,12 +19,9 @@ export default function Home() {
     if (!stored) return;
     const ids: string[] = JSON.parse(stored);
     if (!ids.length) return;
-    supabase
-      .from("trips")
-      .select("*")
-      .in("id", ids.slice(0, 6))
-      .order("created_at", { ascending: false })
-      .then(({ data }) => { if (data) setRecentTrips(data); });
+    getTripsByIds(ids.slice(0, 6))
+      .then(data => setRecentTrips(data))
+      .catch(console.error);
   }, []);
 
   async function handleCreate(e: React.FormEvent) {
@@ -36,16 +33,10 @@ export default function Home() {
     setCreating(true);
     setError("");
     try {
-      const token = crypto.randomUUID();
-      const { data, error: err } = await supabase
-        .from("trips")
-        .insert({ name: tripName.trim(), destination: destination.trim(), secret_token: token })
-        .select()
-        .single();
-      if (err) throw err;
+      const trip = await createTrip(tripName.trim(), destination.trim());
       const prev = JSON.parse(localStorage.getItem("mxj_recent_trips") ?? "[]");
-      localStorage.setItem("mxj_recent_trips", JSON.stringify([data.id, ...prev].slice(0, 10)));
-      router.push(`/trip/${data.id}`);
+      localStorage.setItem("mxj_recent_trips", JSON.stringify([trip.id, ...prev].slice(0, 10)));
+      router.push(`/trip/${trip.id}`);
     } catch {
       setError("Failed to create trip. Try again.");
       setCreating(false);

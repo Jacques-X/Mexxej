@@ -11,8 +11,13 @@ export default function DeleteTripButton({ tripId }: { tripId: string }) {
 
   async function handleDelete() {
     setDeleting(true);
-    await deleteTrip(tripId);
-    router.push("/");
+    try {
+      await deleteTrip(tripId);
+      router.push("/");
+    } catch {
+      setDeleting(false);
+      setConfirm(false);
+    }
   }
 
   if (!confirm) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
   useSensor, useSensors, DragEndEvent,
@@ -14,7 +14,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Trip, TripLocation, DayNote, Reservation, LocationCategory, ConciergeSuggestion } from "@/types/trip";
 import {
   getLocationsByTrip, addLocation, deleteLocation, reorderLocations,
-  getDayNotes, upsertDayNote, uploadMedia,
+  getDayNotes, upsertDayNote,
   updateLocation,
   getReservations, addReservation, updateReservation, deleteReservation,
 } from "@/lib/supabase";
@@ -92,14 +92,14 @@ function SortableStop({
     const idx  = MODES.indexOf(mode);
     const nxt  = MODES[(idx + 1) % MODES.length];
     onUpdateLoc(loc.id, { transport_mode: nxt });
-    updateLocation(loc.id, { transport_mode: nxt });
+    updateLocation(loc.id, { transport_mode: nxt }).catch(console.error);
   }
 
   function saveTime() {
     setEditingTime(false);
     const val = tempTime || undefined;
     onUpdateLoc(loc.id, { arrival_time: val ?? null });
-    updateLocation(loc.id, { arrival_time: val });
+    updateLocation(loc.id, { arrival_time: val }).catch(console.error);
   }
 
   function saveDur() {
@@ -115,7 +115,7 @@ function SortableStop({
     if (!editName.trim()) return;
     setEditing(false);
     onUpdateLoc(loc.id, { name: editName.trim(), category: editCat, description: editDesc });
-    updateLocation(loc.id, { name: editName.trim(), category: editCat, description: editDesc });
+    updateLocation(loc.id, { name: editName.trim(), category: editCat, description: editDesc }).catch(console.error);
   }
 
   const arrLabel = timing?.arrivalMin != null ? formatMinutes(timing.arrivalMin) : null;
@@ -573,7 +573,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
       const others = prev.filter(l => l.day_number !== activeDay);
       return [...others, ...reordered].sort((a, b) => a.day_number - b.day_number || a.order_index - b.order_index);
     });
-    reorderLocations(reordered.map(l => ({ id: l.id, day_number: l.day_number, order_index: l.order_index })));
+    reorderLocations(reordered.map(l => ({ id: l.id, day_number: l.day_number, order_index: l.order_index }))).catch(console.error);
   }
 
   function handleAddSuggestion(s: ConciergeSuggestion) {
@@ -584,7 +584,11 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   }
 
   async function handleDeleteLocation(id: string) {
-    await deleteLocation(id);
+    try {
+      await deleteLocation(id);
+    } catch {
+      return; // DB delete failed — leave UI unchanged
+    }
     setLocations(prev => prev.filter(l => l.id !== id));
     if (selectedLocation?.id === id) setSelectedLocation(null);
   }
@@ -597,7 +601,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
     });
     clearTimeout(noteTimers.current[dayNum]);
     noteTimers.current[dayNum] = setTimeout(() => {
-      upsertDayNote(trip.id, dayNum, noteContent);
+      upsertDayNote(trip.id, dayNum, noteContent).catch(console.error);
     }, 600);
   }
 

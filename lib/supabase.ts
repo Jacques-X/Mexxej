@@ -21,6 +21,39 @@ export async function getTripById(id: string): Promise<Trip | null> {
   return data;
 }
 
+export async function createTrip(
+  name: string,
+  destination: string
+): Promise<Trip> {
+  const secret_token = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+  const { data, error } = await supabase
+    .from("trips")
+    .insert({ name, destination, secret_token })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function getTripsByIds(ids: string[]): Promise<Trip[]> {
+  if (!ids.length) return [];
+  const { data, error } = await supabase
+    .from("trips")
+    .select("*")
+    .in("id", ids)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function updateTrip(
+  id: string,
+  updates: Partial<Pick<Trip, "name" | "destination" | "start_date" | "end_date">>
+): Promise<void> {
+  const { error } = await supabase.from("trips").update(updates).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 export async function getLocationsByTrip(
   tripId: string
 ): Promise<TripLocation[]> {
@@ -105,10 +138,10 @@ export async function deleteLocation(id: string): Promise<void> {
 }
 
 export async function deleteTrip(id: string): Promise<void> {
-  // trip_locations are removed first to satisfy FK constraints
-  // (if the DB has ON DELETE CASCADE this is a no-op, but safe either way)
-  await supabase.from("trip_locations").delete().eq("trip_id", id);
-  await supabase.from("trips").delete().eq("id", id);
+  // All child tables have ON DELETE CASCADE, so deleting the trip row
+  // removes everything (locations, notes, reservations, budget, packing).
+  const { error } = await supabase.from("trips").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 // ─── Reservations ─────────────────────────────────────────
