@@ -104,6 +104,24 @@ export interface ConciergeResponse {
   suggestion: ConciergeSuggestion;
 }
 
+/**
+ * One segment of a transit journey returned by /api/routing.
+ * mode mirrors OTP values: "WALK" | "BUS" | "RAIL" | "TRAM" | "SUBWAY" | "FERRY" | "GONDOLA" | "CABLE_CAR" | "FUNICULAR"
+ */
+export interface TransitLeg {
+  mode: string;
+  minutes: number;
+  route?: string;       // short route name e.g. "IC 1", "42B"
+  headsign?: string;    // direction board text e.g. "Zürich HB"
+  agency?: string;      // operator e.g. "SBB", "TfL"
+  fromStop?: string;
+  toStop?: string;
+  /** Scheduled departure time as epoch milliseconds (present when a depart_date was passed to /api/routing) */
+  departTime?: number;
+  /** Scheduled arrival time as epoch milliseconds */
+  arriveTime?: number;
+}
+
 export interface CameraPosition {
   center: { lat: number; lng: number; altitude?: number };
   tilt: number;

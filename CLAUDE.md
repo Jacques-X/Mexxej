@@ -189,6 +189,34 @@ haversine straight-line estimate shown with "~est".
 
 transport_mode is stored on the FROM location (representing mode to next stop).
 
+### 8a. Transit leg details and scheduled times
+
+For transit legs, /api/routing returns the full leg breakdown from Transitous:
+- mode (WALK | BUS | RAIL | TRAM | SUBWAY | FERRY …)
+- route (short name e.g. "IC 1", "42B")
+- headsign (direction board e.g. "Zürich HB")
+- agency (operator e.g. "SBB")
+- fromStop / toStop (boarding / alighting station names)
+- departTime / arriveTime (epoch ms — present when depart_date was passed)
+
+Departure date/time passed to Transitous:
+- depart_date: trip.start_date + (day_number − 1) days, falling back to today
+- depart_time: arrival_time of the FROM stop + duration_minutes; omitted if
+  the stop has no anchor time
+
+The connector between stops shows a leg-breakdown row:
+  🚶 5m  →  [🚆 IC 1 → Zürich HB  10:23–11:05]  →  🚶 2m
+
+When epoch-ms times are present, dep–arr times replace the duration for
+transit legs. Walk legs always show minutes.
+
+**Timezone note:** departTime / arriveTime are formatted with
+`new Date(ms).toLocaleTimeString(...)` in the user's browser timezone.
+Transitous returns OTP epoch-ms in the GTFS agency timezone (usually the
+destination country). If the user's browser is in a different timezone the
+displayed clock times will be offset. This is a known limitation; a proper fix
+requires knowing the trip destination's IANA timezone.
+
 ### 9. Timeline system — wired into itinerary
 
 lib/timeline.ts exports computeDayTimeline(stops, realTravelMinutes).
@@ -399,10 +427,22 @@ Binary tiles cached 24h; JSON manifests 5min.
 
 ### GET /api/routing
 Travel time proxy. No API key required for any mode.
-Params: from_lat, from_lng, to_lat, to_lng, mode (walk|cycle|transit)
-Response: { minutes: number, real: boolean }
+Params:
+  from_lat, from_lng, to_lat, to_lng  (required)
+  mode          walk | cycle | transit   (default: walk)
+  depart_date   YYYY-MM-DD   optional — used for transit schedule lookup
+  depart_time   HH:MM        optional — departure time from origin stop
+Response:
+  { minutes: number, real: boolean }              walk/cycle
+  { minutes: number, real: boolean, legs: [...] } transit
+
   walk/cycle → OSRM router.project-osrm.org (foot/bike profiles)
   transit    → Transitous api.transitous.org (MOTIS, OTP-compatible, GTFS)
+
+Each transit leg: { mode, minutes, route?, headsign?, agency?,
+                    fromStop?, toStop?, departTime?, arriveTime? }
+  departTime / arriveTime are epoch ms; present only when depart_date was given.
+
 Falls back gracefully — returns 502 on failure, client shows haversine estimate.
 
 ---

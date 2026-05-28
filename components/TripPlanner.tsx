@@ -11,7 +11,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import type { Trip, TripLocation, DayNote, Reservation, LocationCategory, ConciergeSuggestion } from "@/types/trip";
+import type { Trip, TripLocation, DayNote, Reservation, LocationCategory, ConciergeSuggestion, TransitLeg } from "@/types/trip";
 import {
   getLocationsByTrip, addLocation, deleteLocation, reorderLocations,
   getDayNotes, upsertDayNote,
@@ -41,18 +41,48 @@ const CAT_OPTIONS: { value: LocationCategory; label: string }[] = [
 
 const MODES: TransportMode[] = ["walk", "cycle", "transit"];
 
-// ── Fetch real travel time ─────────────────────────────────────
-async function fetchTravelTime(
+// ── Fetch real travel time + leg breakdown ─────────────────────
+const LEG_EMOJI: Record<string, string> = {
+  WALK: "🚶", BUS: "🚌", RAIL: "🚆", TRAM: "🚃",
+  SUBWAY: "🚇", FERRY: "⛴", GONDOLA: "🚡", CABLE_CAR: "🚟", FUNICULAR: "🚞",
+};
+
+/** Returns YYYY-MM-DD for the calendar day of a given leg (day 1 = trip start date). */
+function getLegDepartDate(tripStartDate: string | undefined, dayNumber: number): string {
+  const base = tripStartDate ? new Date(tripStartDate) : new Date();
+  base.setUTCDate(base.getUTCDate() + (dayNumber - 1));
+  return base.toISOString().substring(0, 10);
+}
+
+/** Returns HH:MM departure time from a stop (arrival + duration), or undefined. */
+function getStopDepartTime(loc: TripLocation): string | undefined {
+  if (!loc.arrival_time) return undefined;
+  const [h, m] = loc.arrival_time.split(":").map(Number);
+  const depMin = h * 60 + m + (loc.duration_minutes ?? 0);
+  return `${String(Math.floor(depMin / 60) % 24).padStart(2, "0")}:${String(depMin % 60).padStart(2, "0")}`;
+}
+
+/** Formats an epoch-ms timestamp as HH:MM in the browser's local timezone. */
+function formatEpochTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+async function fetchRouteInfo(
   from: TripLocation,
   to: TripLocation,
   mode: TransportMode,
-): Promise<number | null> {
+  departDate?: string,
+  departTime?: string,
+): Promise<{ minutes: number; legs?: TransitLeg[] } | null> {
   try {
-    const url = `/api/routing?from_lat=${from.latitude}&from_lng=${from.longitude}&to_lat=${to.latitude}&to_lng=${to.longitude}&mode=${mode}`;
+    let url = `/api/routing?from_lat=${from.latitude}&from_lng=${from.longitude}&to_lat=${to.latitude}&to_lng=${to.longitude}&mode=${mode}`;
+    if (departDate) url += `&depart_date=${departDate}`;
+    if (departTime) url += `&depart_time=${encodeURIComponent(departTime)}`;
     const res = await fetch(url);
     if (!res.ok) return null;
-    const data = await res.json() as { minutes?: number };
-    return data.minutes ?? null;
+    const data = await res.json() as { minutes?: number; legs?: TransitLeg[] };
+    if (data.minutes == null) return null;
+    return { minutes: data.minutes, legs: data.legs };
   } catch {
     return null;
   }
@@ -66,6 +96,7 @@ function SortableStop({
   isSelected,
   onClick,
   onUpdateLoc,
+  transitLegs,
 }: {
   loc: TripLocation;
   next: TripLocation | null;
@@ -73,6 +104,7 @@ function SortableStop({
   isSelected: boolean;
   onClick: () => void;
   onUpdateLoc: (id: string, updates: Partial<TripLocation>) => void;
+  transitLegs?: TransitLeg[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: loc.id });
@@ -278,32 +310,71 @@ function SortableStop({
 
       {next && (
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "5px 20px 5px 42px",
-            borderBottom: "1px solid var(--mxj-stroke)",
-            background: "var(--mxj-base)",
-          }}
+          style={{ borderBottom: "1px solid var(--mxj-stroke)", background: "var(--mxj-base)" }}
           onClick={e => e.stopPropagation()}
         >
-          <button
-            onClick={cycleMode}
-            title={`Mode: ${TRANSPORT_META[mode].label} — click to change`}
-            style={{ background: "none", border: "1px solid var(--mxj-stroke)", cursor: "pointer", fontSize: 13, padding: "2px 6px", lineHeight: 1 }}
-          >
-            {TRANSPORT_META[mode].icon}
-          </button>
-          {timing && (
-            <span className="mxj-mono" style={{ fontSize: 9, color: timing.travelIsReal ? "var(--mxj-muted)" : "var(--mxj-faint)" }}>
-              {timing.travelToNextMin}min
-              {!timing.travelIsReal && <span style={{ opacity: 0.6 }}> ~est</span>}
+          {/* Main mode row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 20px 5px 42px" }}>
+            <button
+              onClick={cycleMode}
+              title={`Mode: ${TRANSPORT_META[mode].label} — click to change`}
+              style={{ background: "none", border: "1px solid var(--mxj-stroke)", cursor: "pointer", fontSize: 13, padding: "2px 6px", lineHeight: 1 }}
+            >
+              {TRANSPORT_META[mode].icon}
+            </button>
+            {timing && (
+              <span className="mxj-mono" style={{ fontSize: 9, color: timing.travelIsReal ? "var(--mxj-muted)" : "var(--mxj-faint)" }}>
+                {timing.travelToNextMin}min
+                {!timing.travelIsReal && <span style={{ opacity: 0.6 }}> ~est</span>}
+              </span>
+            )}
+            <span className="mxj-mono" style={{ fontSize: 8, color: "var(--mxj-faint)", letterSpacing: "0.06em" }}>
+              {TRANSPORT_META[mode].label.toUpperCase()}
             </span>
+          </div>
+          {/* Transit leg breakdown — shown when real leg data is available */}
+          {mode === "transit" && transitLegs && transitLegs.length > 0 && (
+            <div style={{ padding: "0 20px 6px 42px", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+              {transitLegs.map((leg, idx) => (
+                <span key={idx} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                  {idx > 0 && (
+                    <span className="mxj-mono" style={{ fontSize: 8, color: "var(--mxj-stroke-strong)", margin: "0 2px" }}>→</span>
+                  )}
+                  <span
+                    className="mxj-mono"
+                    style={{
+                      fontSize: 8,
+                      color: leg.mode === "WALK" ? "var(--mxj-faint)" : "var(--mxj-muted)",
+                      display: "inline-flex", alignItems: "center", gap: 3,
+                      background: leg.mode !== "WALK" ? "var(--mxj-surface)" : "transparent",
+                      border: leg.mode !== "WALK" ? "1px solid var(--mxj-stroke)" : "none",
+                      padding: leg.mode !== "WALK" ? "1px 5px" : "0",
+                    }}
+                    title={[leg.fromStop, leg.toStop].filter(Boolean).join(" → ") || leg.agency || undefined}
+                  >
+                    <span>{LEG_EMOJI[leg.mode] ?? "🚌"}</span>
+                    {leg.route && (
+                      <span style={{ color: "var(--mxj-red)", fontWeight: 600 }}>{leg.route}</span>
+                    )}
+                    {leg.headsign && (
+                      <span style={{ color: "var(--mxj-faint)" }}>→ {leg.headsign}</span>
+                    )}
+                    {/* Show scheduled dep–arr when available; fall back to duration */}
+                    {leg.mode !== "WALK" && leg.departTime != null ? (
+                      <span style={{ color: "var(--mxj-ink)", fontWeight: 500 }}>
+                        {formatEpochTime(leg.departTime)}
+                        {leg.arriveTime != null && (
+                          <span style={{ color: "var(--mxj-muted)", fontWeight: 400 }}>–{formatEpochTime(leg.arriveTime)}</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span>{leg.minutes}m</span>
+                    )}
+                  </span>
+                </span>
+              ))}
+            </div>
           )}
-          <span className="mxj-mono" style={{ fontSize: 8, color: "var(--mxj-faint)", letterSpacing: "0.06em" }}>
-            {TRANSPORT_META[mode].label.toUpperCase()}
-          </span>
         </div>
       )}
     </>
@@ -469,7 +540,9 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   const [reservations, setReservations]   = useState<Reservation[]>([]);
 
   // Real travel time cache: `${fromId}:${toId}` → minutes
-  const [travelTimes, setTravelTimes] = useState<Record<string, number>>({});
+  const [travelTimes, setTravelTimes]       = useState<Record<string, number>>({});
+  // Transit leg details cache: `${fromId}:${toId}` → legs (transit mode only)
+  const [transitDetails, setTransitDetails] = useState<Record<string, TransitLeg[]>>({});
 
   const [selectedLocation, setSelectedLocation] = useState<TripLocation | null>(null);
   const [streetViewLoc, setStreetViewLoc]       = useState<TripLocation | null>(null);
@@ -515,14 +588,23 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
         const cacheKey = `${key}:${mode}`;
         if ((window as unknown as Record<string, boolean>)[`rt_${cacheKey}`]) continue;
         (window as unknown as Record<string, boolean>)[`rt_${cacheKey}`] = true;
-        fetchTravelTime(from, to, mode).then(mins => {
-          if (mins != null) {
-            setTravelTimes(prev => ({ ...prev, [key]: mins }));
+        // Compute departure context for realistic schedule lookup
+        const departDate = getLegDepartDate(trip.start_date, from.day_number);
+        const departTime = getStopDepartTime(from);
+
+        fetchRouteInfo(from, to, mode, departDate, departTime).then(info => {
+          if (info != null) {
+            setTravelTimes(prev => ({ ...prev, [key]: info.minutes }));
+            if (info.legs) {
+              setTransitDetails(prev => ({ ...prev, [key]: info.legs! }));
+            }
           }
         });
       }
     });
-  }, [locations]);
+  // trip.start_date included so schedule dates are recomputed if the trip header is edited
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations, trip.start_date]);
 
   const days        = [...new Set(locations.map(l => l.day_number))].sort((a, b) => a - b);
   const displayDays = [...new Set([...(days.length ? days : [1]), ...extraDays])].sort((a, b) => a - b);
@@ -542,6 +624,14 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
         // Also clear window cache flag so it re-fetches
         Object.keys(window).forEach(k => {
           if (k.startsWith(`rt_${id}:`)) delete (window as unknown as Record<string, unknown>)[k];
+        });
+        return next;
+      });
+      setTransitDetails(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(k => {
+          const [fromId] = k.split(":");
+          if (fromId === id) delete next[k];
         });
         return next;
       });
@@ -640,6 +730,10 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
                 isSelected={selectedLocation?.id === loc.id}
                 onClick={() => handleMarkerClick(loc)}
                 onUpdateLoc={handleUpdateLoc}
+                transitLegs={(() => {
+                  const nextLoc = sortedFilteredLocs[i + 1];
+                  return nextLoc ? transitDetails[`${loc.id}:${nextLoc.id}`] : undefined;
+                })()}
               />
             ))
           )}
