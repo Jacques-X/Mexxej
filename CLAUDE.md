@@ -210,12 +210,11 @@ The connector between stops shows a leg-breakdown row:
 When epoch-ms times are present, dep–arr times replace the duration for
 transit legs. Walk legs always show minutes.
 
-**Timezone note:** departTime / arriveTime are formatted with
-`new Date(ms).toLocaleTimeString(...)` in the user's browser timezone.
-Transitous returns OTP epoch-ms in the GTFS agency timezone (usually the
-destination country). If the user's browser is in a different timezone the
-displayed clock times will be offset. This is a known limitation; a proper fix
-requires knowing the trip destination's IANA timezone.
+**Timezone note:** departTime / arriveTime are "HH:MM" strings extracted from
+ISO 8601 timestamps returned by MOTIS 2 (e.g. "2026-05-28T10:23:00+02:00" →
+"10:23"). The timezone offset is baked into the ISO string by the server, so
+the extracted time is always correct for the stop's local timezone regardless
+of where the user's browser is. No client-side timezone conversion is needed.
 
 ### 9. Timeline system — wired into itinerary
 
@@ -437,13 +436,20 @@ Response:
   { minutes: number, real: boolean, legs: [...] } transit
 
   walk/cycle → OSRM router.project-osrm.org (foot/bike profiles)
-  transit    → Transitous api.transitous.org (MOTIS, OTP-compatible, GTFS)
+  transit    → Transitous MOTIS 2 API  api.transitous.org/api/v5/plan
 
 Each transit leg: { mode, minutes, route?, headsign?, agency?,
                     fromStop?, toStop?, departTime?, arriveTime? }
-  departTime / arriveTime are epoch ms; present only when depart_date was given.
+  departTime / arriveTime are "HH:MM" strings in local stop timezone,
+  extracted directly from the ISO 8601 response (timezone offset is baked in).
+  Present only when depart_date was given to the request.
 
 Falls back gracefully — returns 502 on failure, client shows haversine estimate.
+
+NOTE: Transitous migrated from OTP v1 (/api/v1/plan) to MOTIS 2 (/api/v5/plan)
+in 2025. The response structure changed: itineraries are now at the root
+(data.itineraries) rather than nested (data.plan.itineraries), and times are
+ISO 8601 strings rather than epoch milliseconds.
 
 ---
 

@@ -116,10 +116,10 @@ export interface TransitLeg {
   agency?: string;      // operator e.g. "SBB", "TfL"
   fromStop?: string;
   toStop?: string;
-  /** Scheduled departure time as epoch milliseconds (present when a depart_date was passed to /api/routing) */
-  departTime?: number;
-  /** Scheduled arrival time as epoch milliseconds */
-  arriveTime?: number;
+  /** Scheduled departure time as HH:MM local string (present when depart_date was passed to /api/routing) */
+  departTime?: string;
+  /** Scheduled arrival time as HH:MM local string */
+  arriveTime?: string;
 }
 
 export interface CameraPosition {

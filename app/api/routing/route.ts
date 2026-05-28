@@ -4,7 +4,9 @@ export const runtime = "edge";
 
 // Returns travel duration and (for transit) per-leg breakdown between two points.
 // walk/cycle: OSRM public API (no key)
-// transit:    Transitous (transitous.org) — free community MOTIS server, no key, OTP-compatible API
+// transit:    Transitous MOTIS 2 API — free community server, no key, OTP-compatible
+//             Endpoint: GET https://api.transitous.org/api/v5/plan
+//             Times returned as ISO 8601 strings with local timezone offset — no conversion needed.
 
 interface TransitLeg {
   mode: string;
@@ -14,27 +16,39 @@ interface TransitLeg {
   agency?: string;
   fromStop?: string;
   toStop?: string;
+  departTime?: string;   // "HH:MM" in stop's local timezone — extracted from ISO 8601
+  arriveTime?: string;
 }
 
-interface OTPLeg {
+interface MOTISPlace {
+  name?: string;
+}
+
+interface MOTISLeg {
   mode: string;
   duration: number;
-  startTime?: number;      // epoch ms — scheduled departure
-  endTime?: number;        // epoch ms — scheduled arrival
+  startTime?: string;        // ISO 8601 e.g. "2026-05-28T10:23:00+02:00"
+  endTime?: string;
+  scheduledStartTime?: string;
+  scheduledEndTime?: string;
   routeShortName?: string;
+  displayName?: string;
   headsign?: string;
   agencyName?: string;
-  from?: { name?: string };
-  to?: { name?: string };
+  from?: MOTISPlace;
+  to?: MOTISPlace;
 }
 
-interface OTPResponse {
-  plan?: {
-    itineraries?: Array<{
-      duration: number;
-      legs?: OTPLeg[];
-    }>;
-  };
+interface MOTISResponse {
+  itineraries?: Array<{
+    duration: number;
+    legs?: MOTISLeg[];
+  }>;
+}
+
+/** Extract HH:MM from an ISO 8601 date-time string — timezone-correct because offset is baked in. */
+function isoToHHMM(iso: string): string {
+  return iso.substring(11, 16);
 }
 
 export async function GET(req: NextRequest) {
@@ -55,7 +69,7 @@ export async function GET(req: NextRequest) {
     if (mode === "walk" || mode === "cycle") {
       const profile = mode === "cycle" ? "bike" : "foot";
       const url = `https://router.project-osrm.org/route/v1/${profile}/${fromLng},${fromLat};${toLng},${toLat}?overview=false`;
-      const res = await fetch(url, { headers: { "User-Agent": "Mexxej/1.0" } });
+      const res = await fetch(url, { headers: { "User-Agent": "Mexxej/1.0 (mexxej.app)" } });
       if (!res.ok) throw new Error(`OSRM ${res.status}`);
       const data = await res.json() as { routes?: { duration: number }[] };
       const secs = data.routes?.[0]?.duration;
@@ -64,40 +78,51 @@ export async function GET(req: NextRequest) {
     }
 
     if (mode === "transit") {
-      // Transitous: OTP-compatible plan API, free, no key, strong European GTFS coverage
-      // Pass departure date/time so the response reflects the actual trip schedule
+      // MOTIS 2 API (Transitous) — replaced OTP v1 /api/v1/plan
       let transitUrl =
-        `https://api.transitous.org/api/v1/plan` +
+        `https://api.transitous.org/api/v5/plan` +
         `?fromPlace=${fromLat},${fromLng}` +
         `&toPlace=${toLat},${toLng}` +
-        `&mode=TRANSIT,WALK` +
         `&numItineraries=1`;
-      if (departDate) transitUrl += `&date=${departDate}`;
-      if (departTime) transitUrl += `&time=${departTime}:00`;
+
+      // Pass departure datetime as ISO 8601 for accurate schedule lookup
+      if (departDate && departTime) {
+        transitUrl += `&time=${encodeURIComponent(`${departDate}T${departTime}:00`)}`;
+      } else if (departDate) {
+        transitUrl += `&time=${encodeURIComponent(`${departDate}T12:00:00`)}`;
+      }
 
       const res = await fetch(transitUrl, {
-        headers: { "User-Agent": "Mexxej/1.0", Accept: "application/json" },
-        signal: AbortSignal.timeout(8000),
+        headers: {
+          "User-Agent": "Mexxej/1.0 (mexxej.app)",
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(10000),
       });
-      if (!res.ok) throw new Error(`Transitous ${res.status}`);
-      const data = await res.json() as OTPResponse;
-      const itinerary = data.plan?.itineraries?.[0];
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`Transitous ${res.status}: ${body.slice(0, 120)}`);
+      }
+      const data = await res.json() as MOTISResponse;
+      const itinerary = data.itineraries?.[0];
       if (!itinerary) throw new Error("No transit itinerary");
 
-      // Map each OTP leg to a compact TransitLeg; include epoch-ms times when present
-      const legs: TransitLeg[] = (itinerary.legs ?? []).map((leg: OTPLeg) => ({
+      // Map each MOTIS leg to a compact TransitLeg
+      const legs: TransitLeg[] = (itinerary.legs ?? []).map((leg: MOTISLeg) => ({
         mode: leg.mode,
         minutes: Math.max(1, Math.ceil(leg.duration / 60)),
-        route: leg.routeShortName ?? undefined,
+        route: leg.routeShortName ?? leg.displayName ?? undefined,
         headsign: leg.headsign ?? undefined,
         agency: leg.agencyName ?? undefined,
         fromStop: leg.from?.name ?? undefined,
         toStop: leg.to?.name ?? undefined,
-        departTime: leg.startTime ?? undefined,
-        arriveTime: leg.endTime ?? undefined,
+        // ISO 8601 strings carry the local timezone offset — extracting HH:MM is correct
+        departTime: leg.startTime ? isoToHHMM(leg.startTime) : undefined,
+        arriveTime: leg.endTime   ? isoToHHMM(leg.endTime)   : undefined,
       }));
 
-      console.log("[routing/transit] legs:", legs.length, legs.map(l => `${l.mode} ${l.minutes}m ${l.route ?? ""}`).join(" | "));
+      console.log("[routing/transit] legs:", legs.length, legs.map(l => `${l.mode} ${l.minutes}m ${l.route ?? ""} ${l.departTime ?? ""}`).join(" | "));
+
       return NextResponse.json({
         minutes: Math.ceil(itinerary.duration / 60),
         real: true,
@@ -107,6 +132,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ error: "Unknown mode" }, { status: 400 });
   } catch (err) {
+    console.error("[routing/error] mode:", mode, "error:", String(err));
     return NextResponse.json({ error: String(err), real: false }, { status: 502 });
   }
 }

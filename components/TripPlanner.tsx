@@ -62,10 +62,7 @@ function getStopDepartTime(loc: TripLocation): string | undefined {
   return `${String(Math.floor(depMin / 60) % 24).padStart(2, "0")}:${String(depMin % 60).padStart(2, "0")}`;
 }
 
-/** Formats an epoch-ms timestamp as HH:MM in the browser's local timezone. */
-function formatEpochTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-}
+
 
 async function fetchRouteInfo(
   from: TripLocation,
@@ -360,11 +357,11 @@ function SortableStop({
                       <span style={{ color: "var(--mxj-faint)" }}>→ {leg.headsign}</span>
                     )}
                     {/* Show scheduled dep–arr when available; fall back to duration */}
-                    {leg.mode !== "WALK" && leg.departTime != null ? (
+                    {leg.mode !== "WALK" && leg.departTime ? (
                       <span style={{ color: "var(--mxj-ink)", fontWeight: 500 }}>
-                        {formatEpochTime(leg.departTime)}
-                        {leg.arriveTime != null && (
-                          <span style={{ color: "var(--mxj-muted)", fontWeight: 400 }}>–{formatEpochTime(leg.arriveTime)}</span>
+                        {leg.departTime}
+                        {leg.arriveTime && (
+                          <span style={{ color: "var(--mxj-muted)", fontWeight: 400 }}>–{leg.arriveTime}</span>
                         )}
                       </span>
                     ) : (
@@ -593,9 +590,6 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
         const departTime = getStopDepartTime(from);
 
         fetchRouteInfo(from, to, mode, departDate, departTime).then(info => {
-          if (mode === "transit") {
-            console.log("[routing transit]", key, "->", info ? `${info.minutes}min, ${info.legs?.length ?? 0} legs` : "null", {departDate, departTime, legs: info?.legs});
-          }
           if (info != null) {
             setTravelTimes(prev => ({ ...prev, [key]: info.minutes }));
             if (info.legs) {
