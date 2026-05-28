@@ -11,29 +11,25 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import type { Trip, TripLocation, DayNote, Reservation, BudgetItem, PackingItem, LocationCategory, ConciergeSuggestion } from "@/types/trip";
+import type { Trip, TripLocation, DayNote, Reservation, LocationCategory, ConciergeSuggestion } from "@/types/trip";
 import {
   getLocationsByTrip, addLocation, deleteLocation, reorderLocations,
   getDayNotes, upsertDayNote, uploadMedia,
   updateLocation,
   getReservations, addReservation, updateReservation, deleteReservation,
-  getBudgetItems, addBudgetItem, deleteBudgetItem,
-  getPackingItems, addPackingItem, updatePackingItem, deletePackingItem,
 } from "@/lib/supabase";
 import { computeDayTimeline, formatMinutes, TRANSPORT_META, type TransportMode, type StopTiming } from "@/lib/timeline";
 
 import Map3D, { type Map3DHandle } from "./Map3D";
 import InfoCard from "./InfoCard";
 import StreetViewPortal from "./StreetViewPortal";
-import BudgetPanel from "./BudgetPanel";
 import ReservationsPanel from "./ReservationsPanel";
-import PackingPanel from "./PackingPanel";
 import TravelConcierge from "./TravelConcierge";
 import Logo from "./Logo";
 import DeleteTripButton from "./DeleteTripButton";
 
 // ── Types ──────────────────────────────────────────────────────
-type ActiveTab = "map" | "reservations" | "budget" | "packing" | "concierge";
+type ActiveTab = "map" | "reservations" | "concierge";
 
 const CAT_OPTIONS: { value: LocationCategory; label: string }[] = [
   { value: "hotel",      label: "Hotel"       },
@@ -81,18 +77,22 @@ function SortableStop({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: loc.id });
 
-  const [editingTime, setEditingTime]     = useState(false);
-  const [editingDur, setEditingDur]       = useState(false);
-  const [tempTime, setTempTime]           = useState(loc.arrival_time ?? "");
-  const [tempDur, setTempDur]             = useState(String(loc.duration_minutes ?? ""));
+  const [editingTime, setEditingTime] = useState(false);
+  const [editingDur, setEditingDur]   = useState(false);
+  const [tempTime, setTempTime]       = useState(loc.arrival_time ?? "");
+  const [tempDur, setTempDur]         = useState(String(loc.duration_minutes ?? ""));
+  const [editing, setEditing]         = useState(false);
+  const [editName, setEditName]       = useState(loc.name);
+  const [editCat, setEditCat]         = useState<LocationCategory>(loc.category);
+  const [editDesc, setEditDesc]       = useState(loc.description ?? "");
 
   const mode: TransportMode = (loc.transport_mode as TransportMode | null) ?? "walk";
 
   function cycleMode() {
     const idx  = MODES.indexOf(mode);
-    const next = MODES[(idx + 1) % MODES.length];
-    onUpdateLoc(loc.id, { transport_mode: next });
-    updateLocation(loc.id, { transport_mode: next });
+    const nxt  = MODES[(idx + 1) % MODES.length];
+    onUpdateLoc(loc.id, { transport_mode: nxt });
+    updateLocation(loc.id, { transport_mode: nxt });
   }
 
   function saveTime() {
@@ -107,6 +107,15 @@ function SortableStop({
     const val = tempDur ? parseInt(tempDur) : undefined;
     onUpdateLoc(loc.id, { duration_minutes: val ?? null });
     updateLocation(loc.id, { duration_minutes: val });
+  }
+
+  function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!editName.trim()) return;
+    setEditing(false);
+    onUpdateLoc(loc.id, { name: editName.trim(), category: editCat, description: editDesc });
+    updateLocation(loc.id, { name: editName.trim(), category: editCat, description: editDesc });
   }
 
   const arrLabel = timing?.arrivalMin != null ? formatMinutes(timing.arrivalMin) : null;
@@ -127,106 +136,146 @@ function SortableStop({
           background: isSelected ? "var(--mxj-surface-2)" : "transparent",
           borderBottom: next ? "none" : "1px solid var(--mxj-stroke)",
           borderLeft: isSelected ? "2px solid var(--mxj-red)" : "2px solid transparent",
-          cursor: "pointer",
+          cursor: editing ? "default" : "pointer",
         }}
-        onClick={onClick}
+        onClick={editing ? undefined : onClick}
       >
-        {/* Drag handle */}
-        <span
-          {...attributes}
-          {...listeners}
-          style={{ cursor: "grab", color: "var(--mxj-faint)", flexShrink: 0, paddingTop: 2, display: "flex", alignItems: "center" }}
-          onClick={e => e.stopPropagation()}
-        >
-          <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-            <rect x="0" y="0"   width="3" height="3" />
-            <rect x="7" y="0"   width="3" height="3" />
-            <rect x="0" y="5.5" width="3" height="3" />
-            <rect x="7" y="5.5" width="3" height="3" />
-            <rect x="0" y="11"  width="3" height="3" />
-            <rect x="7" y="11"  width="3" height="3" />
-          </svg>
-        </span>
+        {!editing && (
+          <span
+            {...attributes}
+            {...listeners}
+            style={{ cursor: "grab", color: "var(--mxj-faint)", flexShrink: 0, paddingTop: 2, display: "flex", alignItems: "center" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+              <rect x="0" y="0"   width="3" height="3" />
+              <rect x="7" y="0"   width="3" height="3" />
+              <rect x="0" y="5.5" width="3" height="3" />
+              <rect x="7" y="5.5" width="3" height="3" />
+              <rect x="0" y="11"  width="3" height="3" />
+              <rect x="7" y="11"  width="3" height="3" />
+            </svg>
+          </span>
+        )}
 
-        <div className={`mxj-stop-marker${isSelected ? "" : " inactive"}`} style={{ marginTop: 3 }} />
+        <div className={`mxj-stop-marker${isSelected && !editing ? "" : " inactive"}`} style={{ marginTop: 3 }} />
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Name */}
-          <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--mxj-ink)" }}>
-            {loc.name}
-          </div>
-
-          {/* Timing row */}
-          <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap", alignItems: "center" }} onClick={e => e.stopPropagation()}>
-            {/* Arrival time */}
-            {editingTime ? (
+          {editing ? (
+            <form onSubmit={saveEdit} style={{ display: "flex", flexDirection: "column", gap: 6 }} onClick={e => e.stopPropagation()}>
               <input
-                autoFocus
-                type="time"
                 className="mxj-input"
-                style={{ width: 90, fontSize: 11, padding: "2px 6px" }}
-                value={tempTime}
-                onChange={e => setTempTime(e.target.value)}
-                onBlur={saveTime}
-                onKeyDown={e => { if (e.key === "Enter") saveTime(); if (e.key === "Escape") setEditingTime(false); }}
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                style={{ fontSize: 12 }}
+                autoFocus
+                required
               />
-            ) : arrLabel ? (
-              <span
-                className="mxj-mono"
-                style={{ fontSize: 10, color: "var(--mxj-ink)", cursor: "text", borderBottom: "1px dashed var(--mxj-stroke-strong)" }}
-                onClick={() => { setTempTime(loc.arrival_time ?? ""); setEditingTime(true); }}
-                title="Click to edit arrival time"
+              <select
+                className="mxj-select"
+                value={editCat}
+                onChange={e => setEditCat(e.target.value as LocationCategory)}
+                style={{ fontSize: 11 }}
               >
-                {arrLabel}
-                {depLabel && <> → {depLabel}</>}
-              </span>
-            ) : (
-              <button
-                className="mxj-mono"
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mxj-faint)", fontSize: 9, padding: 0 }}
-                onClick={() => { setTempTime(""); setEditingTime(true); }}
-              >
-                + set time
-              </button>
-            )}
+                {CAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <textarea
+                className="mxj-input"
+                rows={2}
+                placeholder="Notes..."
+                value={editDesc}
+                onChange={e => setEditDesc(e.target.value)}
+                style={{ resize: "none", fontSize: 11 }}
+              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button type="submit" className="mxj-btn mxj-btn-primary" style={{ flex: 1, justifyContent: "center", padding: "7px 0", fontSize: 10 }}>Save</button>
+                <button type="button" onClick={e => { e.stopPropagation(); setEditing(false); }} className="mxj-btn mxj-btn-ghost" style={{ padding: "7px 10px", fontSize: 10 }}>Cancel</button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <div style={{ flex: 1, fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--mxj-ink)" }}>
+                  {loc.name}
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); setEditing(true); setEditName(loc.name); setEditCat(loc.category); setEditDesc(loc.description ?? ""); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mxj-faint)", padding: "0 2px", fontSize: 11, flexShrink: 0, lineHeight: 1 }}
+                  title="Edit stop"
+                >
+                  ✎
+                </button>
+              </div>
 
-            {/* Duration */}
-            {editingDur ? (
-              <input
-                autoFocus
-                type="number"
-                min="0"
-                className="mxj-input"
-                style={{ width: 60, fontSize: 11, padding: "2px 6px" }}
-                value={tempDur}
-                placeholder="min"
-                onChange={e => setTempDur(e.target.value)}
-                onBlur={saveDur}
-                onKeyDown={e => { if (e.key === "Enter") saveDur(); if (e.key === "Escape") setEditingDur(false); }}
-              />
-            ) : loc.duration_minutes ? (
-              <span
-                className="mxj-mono"
-                style={{ fontSize: 9, color: "var(--mxj-muted)", cursor: "text" }}
-                onClick={() => { setTempDur(String(loc.duration_minutes ?? "")); setEditingDur(true); }}
-                title="Click to edit duration"
-              >
-                {loc.duration_minutes}min
-              </span>
-            ) : (
-              <button
-                className="mxj-mono"
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mxj-faint)", fontSize: 9, padding: 0 }}
-                onClick={() => { setTempDur(""); setEditingDur(true); }}
-              >
-                + duration
-              </button>
-            )}
-          </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap", alignItems: "center" }} onClick={e => e.stopPropagation()}>
+                {editingTime ? (
+                  <input
+                    autoFocus
+                    type="time"
+                    className="mxj-input"
+                    style={{ width: 90, fontSize: 11, padding: "2px 6px" }}
+                    value={tempTime}
+                    onChange={e => setTempTime(e.target.value)}
+                    onBlur={saveTime}
+                    onKeyDown={e => { if (e.key === "Enter") saveTime(); if (e.key === "Escape") setEditingTime(false); }}
+                  />
+                ) : arrLabel ? (
+                  <span
+                    className="mxj-mono"
+                    style={{ fontSize: 10, color: "var(--mxj-ink)", cursor: "text", borderBottom: "1px dashed var(--mxj-stroke-strong)" }}
+                    onClick={() => { setTempTime(loc.arrival_time ?? ""); setEditingTime(true); }}
+                    title="Click to edit arrival time"
+                  >
+                    {arrLabel}
+                    {depLabel && <> → {depLabel}</>}
+                  </span>
+                ) : (
+                  <button
+                    className="mxj-mono"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mxj-faint)", fontSize: 9, padding: 0 }}
+                    onClick={() => { setTempTime(""); setEditingTime(true); }}
+                  >
+                    + set time
+                  </button>
+                )}
+
+                {editingDur ? (
+                  <input
+                    autoFocus
+                    type="number"
+                    min="0"
+                    className="mxj-input"
+                    style={{ width: 60, fontSize: 11, padding: "2px 6px" }}
+                    value={tempDur}
+                    placeholder="min"
+                    onChange={e => setTempDur(e.target.value)}
+                    onBlur={saveDur}
+                    onKeyDown={e => { if (e.key === "Enter") saveDur(); if (e.key === "Escape") setEditingDur(false); }}
+                  />
+                ) : loc.duration_minutes ? (
+                  <span
+                    className="mxj-mono"
+                    style={{ fontSize: 9, color: "var(--mxj-muted)", cursor: "text" }}
+                    onClick={() => { setTempDur(String(loc.duration_minutes ?? "")); setEditingDur(true); }}
+                    title="Click to edit duration"
+                  >
+                    {loc.duration_minutes}min
+                  </span>
+                ) : (
+                  <button
+                    className="mxj-mono"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mxj-faint)", fontSize: 9, padding: 0 }}
+                    onClick={() => { setTempDur(""); setEditingDur(true); }}
+                  >
+                    + duration
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Travel connector to next stop */}
       {next && (
         <div
           style={{
@@ -239,7 +288,6 @@ function SortableStop({
           }}
           onClick={e => e.stopPropagation()}
         >
-          {/* Mode toggle button */}
           <button
             onClick={cycleMode}
             title={`Mode: ${TRANSPORT_META[mode].label} — click to change`}
@@ -247,16 +295,12 @@ function SortableStop({
           >
             {TRANSPORT_META[mode].icon}
           </button>
-
-          {/* Travel time */}
           {timing && (
             <span className="mxj-mono" style={{ fontSize: 9, color: timing.travelIsReal ? "var(--mxj-muted)" : "var(--mxj-faint)" }}>
               {timing.travelToNextMin}min
               {!timing.travelIsReal && <span style={{ opacity: 0.6 }}> ~est</span>}
             </span>
           )}
-
-          {/* Mode label */}
           <span className="mxj-mono" style={{ fontSize: 8, color: "var(--mxj-faint)", letterSpacing: "0.06em" }}>
             {TRANSPORT_META[mode].label.toUpperCase()}
           </span>
@@ -272,23 +316,25 @@ function AddPinPanel({
   days,
   onAdd,
   onClose,
+  initialValues,
 }: {
   tripId: string;
   days: number[];
   onAdd: (loc: TripLocation) => void;
   onClose: () => void;
+  initialValues?: { name: string; lat: string; lng: string; category: LocationCategory };
 }) {
-  const [name, setName]       = useState("");
-  const [lat, setLat]         = useState("");
-  const [lng, setLng]         = useState("");
+  const [name, setName]       = useState(initialValues?.name ?? "");
+  const [lat, setLat]         = useState(initialValues?.lat  ?? "");
+  const [lng, setLng]         = useState(initialValues?.lng  ?? "");
   const [day, setDay]         = useState(days[0] ?? 1);
-  const [cat, setCat]         = useState<LocationCategory>("attraction");
+  const [cat, setCat]         = useState<LocationCategory>(initialValues?.category ?? "attraction");
   const [desc, setDesc]       = useState("");
   const [arrival, setArrival] = useState("");
   const [duration, setDuration] = useState("");
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState("");
-  const [coordConfirm, setCoordConfirm] = useState(false);
+  const [coordConfirm, setCoordConfirm] = useState(!!(initialValues?.lat));
   const inputRef              = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -414,14 +460,13 @@ function AddPinPanel({
 
 // ── Main planner ───────────────────────────────────────────────
 export default function TripPlanner({ trip }: { trip: Trip }) {
-  const mapRef = useRef<Map3DHandle>(null);
+  const mapRef       = useRef<Map3DHandle>(null);
+  const noteTimers   = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
   const [locations, setLocations]         = useState<TripLocation[]>([]);
   const [dayNotes, setDayNotes]           = useState<DayNote[]>([]);
   const [reservations, setReservations]   = useState<Reservation[]>([]);
-  const [budgetItems, setBudgetItems]     = useState<BudgetItem[]>([]);
-  const [packingItems, setPackingItems]   = useState<PackingItem[]>([]);
 
   // Real travel time cache: `${fromId}:${toId}` → minutes
   const [travelTimes, setTravelTimes] = useState<Record<string, number>>({});
@@ -434,6 +479,8 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   const [activeDay, setActiveDay]               = useState<number | null>(null);
   const [copied, setCopied]                     = useState(false);
   const [showDeleteMenu, setShowDeleteMenu]     = useState(false);
+  const [pendingSuggestion, setPendingSuggestion] = useState<ConciergeSuggestion | null>(null);
+  const [extraDays, setExtraDays]               = useState<number[]>([]);
 
   // Data load — allSettled so one missing table never blocks the rest
   useEffect(() => {
@@ -441,19 +488,13 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
       getLocationsByTrip(trip.id),
       getDayNotes(trip.id),
       getReservations(trip.id),
-      getBudgetItems(trip.id),
-      getPackingItems(trip.id),
-    ]).then(([locsR, notesR, resR, budgetR, packingR]) => {
-      const locs    = locsR.status    === "fulfilled" ? locsR.value    : [];
-      const notes   = notesR.status   === "fulfilled" ? notesR.value   : [];
-      const res     = resR.status     === "fulfilled" ? resR.value     : [];
-      const budget  = budgetR.status  === "fulfilled" ? budgetR.value  : [];
-      const packing = packingR.status === "fulfilled" ? packingR.value : [];
+    ]).then(([locsR, notesR, resR]) => {
+      const locs  = locsR.status  === "fulfilled" ? locsR.value  : [];
+      const notes = notesR.status === "fulfilled" ? notesR.value : [];
+      const res   = resR.status   === "fulfilled" ? resR.value   : [];
       setLocations(locs);
       setDayNotes(notes);
       setReservations(res);
-      setBudgetItems(budget);
-      setPackingItems(packing);
       if (locs.length) setActiveDay(locs[0].day_number);
     });
   }, [trip.id]);
@@ -484,7 +525,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   }, [locations]);
 
   const days        = [...new Set(locations.map(l => l.day_number))].sort((a, b) => a - b);
-  const displayDays = days.length ? days : [1];
+  const displayDays = [...new Set([...(days.length ? days : [1]), ...extraDays])].sort((a, b) => a - b);
   const filteredLocs = activeDay !== null ? locations.filter(l => l.day_number === activeDay) : locations;
 
   // Update a location in local state and invalidate cached travel times for its legs
@@ -536,14 +577,28 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   }
 
   function handleAddSuggestion(s: ConciergeSuggestion) {
+    setPendingSuggestion(s);
     setShowAddPin(true);
     setActiveTab("map");
+    setShowSidebar(true);
   }
 
   async function handleDeleteLocation(id: string) {
     await deleteLocation(id);
     setLocations(prev => prev.filter(l => l.id !== id));
     if (selectedLocation?.id === id) setSelectedLocation(null);
+  }
+
+  function handleDayNoteChange(dayNum: number, noteContent: string) {
+    setDayNotes(prev => {
+      const idx = prev.findIndex(n => n.day_number === dayNum);
+      if (idx >= 0) return prev.map(n => n.day_number === dayNum ? { ...n, content: noteContent } : n);
+      return [...prev, { id: "", trip_id: trip.id, day_number: dayNum, content: noteContent, updated_at: "" }];
+    });
+    clearTimeout(noteTimers.current[dayNum]);
+    noteTimers.current[dayNum] = setTimeout(() => {
+      upsertDayNote(trip.id, dayNum, noteContent);
+    }, 600);
   }
 
   function copyShareLink() {
@@ -553,7 +608,7 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
   }
 
   const TAB_LABELS: Record<ActiveTab, string> = {
-    map: "Route", reservations: "Bookings", budget: "Budget", packing: "Packing", concierge: "Concierge",
+    map: "Route", reservations: "Bookings", concierge: "Concierge",
   };
 
   // ── Itinerary list ──
@@ -614,6 +669,28 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
           Day {d}
         </button>
       ))}
+      <button
+        onClick={() => {
+          const next = Math.max(...displayDays, 0) + 1;
+          setExtraDays(p => [...p, next]);
+          setActiveDay(next);
+        }}
+        style={{
+          padding: "8px 12px",
+          background: "none",
+          border: "none",
+          borderBottom: "2px solid transparent",
+          color: "var(--mxj-faint)",
+          cursor: "pointer",
+          fontFamily: "var(--mxj-mono)",
+          fontSize: 10,
+          letterSpacing: "0.08em",
+          whiteSpace: "nowrap",
+          flexShrink: 0,
+        }}
+      >
+        + Day
+      </button>
     </div>
   );
 
@@ -755,7 +832,8 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
                   tripId={trip.id}
                   days={displayDays}
                   onAdd={loc => { setLocations(p => [...p, loc]); setSelectedLocation(loc); }}
-                  onClose={() => setShowAddPin(false)}
+                  onClose={() => { setShowAddPin(false); setPendingSuggestion(null); }}
+                  initialValues={pendingSuggestion ? { name: pendingSuggestion.name, lat: String(pendingSuggestion.latitude), lng: String(pendingSuggestion.longitude), category: pendingSuggestion.category } : undefined}
                 />
               </div>
             ) : (
@@ -772,6 +850,19 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
                   </button>
                 </div>
                 {itineraryList}
+                {activeDay !== null && !showAddPin && (
+                  <div style={{ borderTop: "1px solid var(--mxj-stroke)", padding: "10px 20px", flexShrink: 0 }}>
+                    <div className="mxj-label" style={{ marginBottom: 4 }}>Day note</div>
+                    <textarea
+                      className="mxj-input"
+                      rows={2}
+                      placeholder="Notes for this day..."
+                      value={dayNotes.find(n => n.day_number === activeDay)?.content ?? ""}
+                      onChange={e => handleDayNoteChange(activeDay, e.target.value)}
+                      style={{ resize: "none", fontSize: 12, width: "100%", boxSizing: "border-box" }}
+                    />
+                  </div>
+                )}
               </>
             )}
           </>
@@ -783,10 +874,6 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
             onUpdate={(id, u) => setReservations(p => p.map(r => r.id === id ? { ...r, ...u } : r))}
             onDelete={id => setReservations(p => p.filter(r => r.id !== id))}
           />
-        ) : activeTab === "budget" ? (
-          <BudgetPanel tripId={trip.id} items={budgetItems} onUpdate={setBudgetItems} />
-        ) : activeTab === "packing" ? (
-          <PackingPanel tripId={trip.id} items={packingItems} onUpdate={setPackingItems} />
         ) : (
           <TravelConcierge
             tripId={trip.id}
@@ -866,13 +953,27 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
                   tripId={trip.id}
                   days={displayDays}
                   onAdd={loc => { setLocations(p => [...p, loc]); setSelectedLocation(loc); }}
-                  onClose={() => setShowAddPin(false)}
+                  onClose={() => { setShowAddPin(false); setPendingSuggestion(null); }}
+                  initialValues={pendingSuggestion ? { name: pendingSuggestion.name, lat: String(pendingSuggestion.latitude), lng: String(pendingSuggestion.longitude), category: pendingSuggestion.category } : undefined}
                 />
               </div>
             ) : (
               <>
                 <div style={{ borderBottom: "1px solid var(--mxj-stroke)", flexShrink: 0 }}>{dayTabs}</div>
                 {itineraryList}
+                {activeDay !== null && !showAddPin && (
+                  <div style={{ borderTop: "1px solid var(--mxj-stroke)", padding: "10px 20px", flexShrink: 0 }}>
+                    <div className="mxj-label" style={{ marginBottom: 4 }}>Day note</div>
+                    <textarea
+                      className="mxj-input"
+                      rows={2}
+                      placeholder="Notes for this day..."
+                      value={dayNotes.find(n => n.day_number === activeDay)?.content ?? ""}
+                      onChange={e => handleDayNoteChange(activeDay, e.target.value)}
+                      style={{ resize: "none", fontSize: 12, width: "100%", boxSizing: "border-box" }}
+                    />
+                  </div>
+                )}
               </>
             )
           ) : activeTab === "reservations" ? (
@@ -883,10 +984,6 @@ export default function TripPlanner({ trip }: { trip: Trip }) {
               onUpdate={(id, u) => setReservations(p => p.map(r => r.id === id ? { ...r, ...u } : r))}
               onDelete={id => setReservations(p => p.filter(r => r.id !== id))}
             />
-          ) : activeTab === "budget" ? (
-            <BudgetPanel tripId={trip.id} items={budgetItems} onUpdate={setBudgetItems} />
-          ) : activeTab === "packing" ? (
-            <PackingPanel tripId={trip.id} items={packingItems} onUpdate={setPackingItems} />
           ) : (
             <TravelConcierge
               tripId={trip.id}

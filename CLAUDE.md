@@ -28,6 +28,7 @@ app/
   api/
     concierge/route.ts     <- Gemini 2.0 Flash AI endpoint (rate-limited)
     tiles/[...path]/route.ts <- Google 3D Tiles proxy (EEA workaround)
+    routing/route.ts       <- Travel time proxy: OSRM (walk/cycle) + Transitous (transit)
 
 components/
   Map3D.tsx                <- Google Maps wrapper — read carefully before editing
@@ -40,7 +41,7 @@ components/
 
 lib/
   supabase.ts              <- ALL DB access goes here — typed Supabase helpers
-  timeline.ts              <- Day timeline inference — not currently wired into UI
+  timeline.ts              <- Day timeline inference — wired into TripPlanner itinerary
   cinematicFlyover.ts      <- Screen-capture flyover  — not currently wired into UI
 
 types/trip.ts              <- All shared TypeScript types
@@ -170,12 +171,29 @@ Keep the token — it is needed if 3D tile layers are re-enabled in Map3D.
 
 ### 7. Dead code in lib/ — intentionally kept, ready to wire up
 
-lib/timeline.ts — haversine day timeline inference. Not wired into UI.
-The schema supports it: trip_locations has arrival_time, duration_minutes,
-and transport_mode columns.
-
 lib/cinematicFlyover.ts — tab screen-capture flyover via MediaRecorder.
 Not wired into UI. Needs Map3DHandle.flyCameraAround.
+
+### 8. Transport modes — walk / cycle / transit only (no drive)
+
+"drive" was removed from TransportMode. The three supported modes are:
+  walk    → OSRM foot profile (real road routing, no key)
+  cycle   → OSRM bike profile (real road routing, no key)
+  transit → Transitous community MOTIS server (real GTFS, no key, strong European coverage)
+
+Travel times are fetched via GET /api/routing and cached in TripPlanner state
+keyed `${fromId}:${toId}`. When a mode changes, that leg's cache entry is
+cleared and re-fetched. If the routing call fails, the UI falls back to a
+haversine straight-line estimate shown with "~est".
+
+transport_mode is stored on the FROM location (representing mode to next stop).
+
+### 9. Timeline system — wired into itinerary
+
+lib/timeline.ts exports computeDayTimeline(stops, realTravelMinutes).
+TripPlanner calls it per day and renders arrival/departure times inline.
+Users can click any time or duration to edit it in-place; blur saves to DB.
+Anchor: the first stop with arrival_time set; times cascade forward and backward.
 
 ---
 
@@ -238,6 +256,14 @@ All user strings are sanitised before prompt embedding.
 Google 3D Tiles proxy. Requires preferredRegion: "iad1".
 Rewrites absolute and relative tile URLs in JSON responses.
 Binary tiles cached 24h; JSON manifests 5min.
+
+### GET /api/routing
+Travel time proxy. No API key required for any mode.
+Params: from_lat, from_lng, to_lat, to_lng, mode (walk|cycle|transit)
+Response: { minutes: number, real: boolean }
+  walk/cycle → OSRM router.project-osrm.org (foot/bike profiles)
+  transit    → Transitous api.transitous.org (MOTIS, OTP-compatible, GTFS)
+Falls back gracefully — returns 502 on failure, client shows haversine estimate.
 
 ---
 

@@ -29,15 +29,20 @@ not compete with it.
 - Share the trip via URL — anyone with the link can view and edit
 
 **Panels (accessible via sidebar tabs)**
-- Route: day-by-day stop list with crosshair markers and arrival times
+- Route: day-by-day stop list with timing, per-leg transport mode, and inline editing
 - Bookings: flight/hotel/restaurant/activity reservations with status cycling
 - Budget: expense tracker by category with running total
 - Packing: checklist with progress bar, per-category grouping
 - Concierge: AI assistant (Gemini 2.0 Flash) that suggests stops and can add them
 
+**Timeline system (wired into Route tab)**
+- Per-stop arrival and departure times, computed by cascading from an anchor time
+- Click any time or duration to edit inline; saves to DB on blur
+- Per-leg transport mode: 🚶 Walk / 🚲 Cycle / 🚌 Transit (click to cycle)
+- Real travel times fetched from OSRM (walk/cycle) and Transitous (transit)
+- Falls back to straight-line estimate (~est) if routing unavailable
+
 **Ready but not wired into UI**
-- Day timeline inference: haversine travel-time calculation between stops,
-  cascade from arrival anchors (lib/timeline.ts)
 - Cinematic flyover: screen-capture the tab while the camera orbits each stop
   and export as .webm (lib/cinematicFlyover.ts)
 
@@ -70,6 +75,7 @@ the visual signature of the design.
 
 Next.js 15 App Router · TypeScript · Supabase (Postgres + Realtime + Storage)
 · @vis.gl/react-google-maps · Gemini 2.0 Flash · Tailwind CSS 3.4 · dnd-kit
+· OSRM (walk/cycle routing) · Transitous/MOTIS (transit routing)
 
 ## What makes it unusual
 
